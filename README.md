@@ -25,6 +25,27 @@ pip install -r requirements.txt
 
 По умолчанию скрипты настроены на адрес `http://192.168.10.14:7125`.
 
+## Веб-интерфейс
+
+Проект включает веб-интерфейс на Flask для управления принтером через браузер. Веб-интерфейс доступен по адресу `http://localhost:5000` после запуска.
+
+Для запуска веб-интерфейса выполните:
+
+```bash
+python backend/api/web_interface.py
+```
+
+Или используйте один из стартовых скриптов:
+- `start_tools.bat` (Windows)
+- `start_tools.sh` (Linux/macOS)
+
+Веб-интерфейс включает:
+- Панель управления принтером
+- Отображение текущего состояния принтера
+- Управление температурой экструдера и стола
+- Управление перемещением осей
+- Консоль для отправки G-code команд
+
 ## Доступные скрипты
 
 ### 1. Тест API (test_moonraker_api.py)
@@ -32,7 +53,7 @@ pip install -r requirements.txt
 Выполняет набор тестов для проверки базовой работоспособности API Moonraker.
 
 ```bash
-python test_moonraker_api.py
+python backend/services/test_moonraker_api.py
 ```
 
 #### Тесты
@@ -47,7 +68,7 @@ python test_moonraker_api.py
 Постоянно отслеживает состояние принтера, отображая подробную информацию о текущем состоянии печати.
 
 ```bash
-python monitor_printer.py [опции]
+python backend/services/monitor_printer.py [опции]
 ```
 
 #### Опции
@@ -72,7 +93,7 @@ python monitor_printer.py [опции]
 Подключается к WebSocket API Moonraker и в реальном времени получает и отображает уведомления о событиях принтера.
 
 ```bash
-python websocket_listener.py [опции]
+python backend/services/websocket_listener.py [опции]
 ```
 
 #### Опции
@@ -99,7 +120,7 @@ python websocket_listener.py [опции]
 Позволяет отправлять G-code команды на принтер через API Moonraker как в интерактивном режиме, так и в режиме одиночной команды.
 
 ```bash
-python send_gcode.py [опции]
+python backend/services/send_gcode.py [опции]
 ```
 
 #### Опции
@@ -122,7 +143,7 @@ python send_gcode.py [опции]
 Полнофункциональный интерактивный инструмент с текстовым интерфейсом для комплексного управления принтером через API Moonraker.
 
 ```bash
-python moonraker_tool.py [опции]
+python backend/services/moonraker_tool.py [опции]
 ```
 
 #### Опции
@@ -144,6 +165,28 @@ python moonraker_tool.py [опции]
   - Навигация по директориям
 - Проверка состояния сервера
 
+## Структура проекта
+
+```
+.
+├── backend/
+│   ├── api/              # Веб-интерфейс (Flask)
+│   ├── services/         # Скрипты для работы с API
+│   ├── models/           # Модели данных (пустая директория)
+│   └── utils/            # Вспомогательные функции (пустая директория)
+├── frontend/
+│   ├── static/           # Статические файлы (CSS, JS, изображения)
+│   │   ├── css/          # Таблицы стилей
+│   │   ├── js/           # JavaScript файлы
+│   │   └── images/       # Изображения
+│   └── templates/        # HTML шаблоны
+├── shared/               # Общие ресурсы (пустая директория)
+├── requirements.txt      # Зависимости Python
+├── start_tools.bat       # Стартовый скрипт для Windows
+├── start_tools.sh        # Стартовый скрипт для Linux/macOS
+└── README.md             # Этот файл
+```
+
 ## Вывод
 
-Результаты выводятся в консоль с цветовым форматированием для лучшей читаемости. 
+Результаты выводятся в консоль с цветовым форматированием для лучшей читаемости.
