@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Управление принтером</title>
+  <link rel="stylesheet" href="printer-control.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <button class="sidebar-btn">Панель управления</button>
+    <button class="sidebar-btn active">Управление принтером</button>
+    <button class="sidebar-btn">Учет времени</button>
+    <div class="sidebar-bottom">
+      <div class="sidebar-link"><span>⚙️</span> Настройки</div>
+      <div class="sidebar-link"><span>ℹ️</span> Информация</div>
+    </div>
+  </aside>
+  <main class="dashboard">
+    <div class="printer-header">
+      <div class="printer-selector">
+        <h1 class="printer-title" id="printerTitle">🖨️ Принтер 1 - ENDER-3 PRO</h1>
+        <div class="printer-dropdown" id="printerDropdown">
+          <div class="dropdown-item" data-printer="1" data-state="working">🖨️ Принтер 1 - ENDER-3 PRO</div>
+          <div class="dropdown-item" data-printer="2" data-state="ready">🖨️ Принтер 2 - CR-10 MINI</div>
+          <div class="dropdown-item" data-printer="3" data-state="finished">🖨️ Принтер 3 - Ender-5 Plus</div>
+          <div class="dropdown-item" data-printer="4" data-state="maintenance">🖨️ Принтер 4 - Prusa MK3S</div>
+          <div class="dropdown-item" data-printer="5" data-state="filament">🖨️ Принтер 5 - Ender-3 V2</div>
+        </div>
+      </div>
+      <div class="printer-status status-work">В работе • 67%</div>
+    </div>
+    
+    <!-- Maintenance Warning Modal -->
+    <div class="modal" id="maintenanceModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>⚠️ Требуется обслуживание принтера</h2>
+          <span class="close" id="closeModal">&times;</span>
+        </div>
+        <div class="modal-body">
+          <p>Выбранный принтер требует технического обслуживания.</p>
+          <p>Отправка задачи на печать на этот принтер может привести к неудаче.</p>
+          <p>Использовать принтер в этом режиме рекомендуется только для диагностики и сервисных работ.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn" id="confirmMaintenance">Понятно</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Filament Ended Warning Modal -->
+    <div class="modal" id="filamentModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>⚠️ Закончился филамент</h2>
+          <span class="close" id="closeFilamentModal">&times;</span>
+        </div>
+        <div class="modal-body">
+          <p>В выбранном принтере закончился филамент.</p>
+          <p>Попытка печати приведет к прерыванию процесса и возможной поломке оборудования.</p>
+          <p>Пожалуйста, загрузите новый филамент перед началом печати.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn" id="confirmFilament">Понятно</button>
+        </div>
+      </div>
+    </div>
+    <div class="top-blocks">
+      <section class="temp-section">
+        <h2>Температура</h2>
+        <div class="temp-controls">
+          <div class="temp-block">
+            <label>Экструдер</label>
+            <div class="temp-display">
+              <span class="current-temp">210°C</span>
+              <span class="target-temp">/ 210°C</span>
+            </div>
+            <div class="temp-input-group">
+              <input type="number" id="extruderTemp" value="210" min="0" max="300">
+              <button onclick="setExtruderTemp()">Установить</button>
+            </div>
+          </div>
+          <div class="temp-block">
+            <label>Стол</label>
+            <div class="temp-display">
+              <span class="current-temp">60°C</span>
+              <span class="target-temp">/ 60°C</span>
+            </div>
+            <div class="temp-input-group">
+              <input type="number" id="bedTemp" value="60" min="0" max="120">
+              <button onclick="setBedTemp()">Установить</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="info-section">
+        <h2>Информация</h2>
+        <div class="info-grid">
+          <div class="info-item"><label>Позиция X:</label><span id="posX">125.4</span></div>
+          <div class="info-item"><label>Позиция Y:</label><span id="posY">110.2</span></div>
+          <div class="info-item"><label>Позиция Z:</label><span id="posZ">15.8</span></div>
+          <div class="info-item"><label>Скорость печати:</label><span id="printSpeed">100%</span></div>
+          <div class="info-item"><label>Скорость потока:</label><span id="flowRate">100%</span></div>
+          <div class="info-item"><label>Время печати:</label><span id="printTime">01:23:45</span></div>
+        </div>
+      </section>
+    </div>
+    <div class="row-blocks">
+      <section class="axis-section">
+        <h2>Оси/Экструдер</h2>
+        <div class="axis-controls-compact">
+          <div class="distance-selector">
+            <label>Шаг:</label>
+            <div class="distance-buttons">
+              <button class="distance-btn active" data-distance="0.1">0.1</button>
+              <button class="distance-btn" data-distance="1">1</button>
+              <button class="distance-btn" data-distance="10">10</button>
+            </div>
+          </div>
+          <div class="axis-compact-grid">
+            <button class="axis-btn" onclick="moveAxis('Y', getCurrentDistance())">↑</button>
+            <div class="axis-btns-row">
+              <button class="axis-btn" onclick="moveAxis('X', -getCurrentDistance())">←</button>
+              <button class="axis-btn home-btn" onclick="homeAxis('XY')">●</button>
+              <button class="axis-btn" onclick="moveAxis('X', getCurrentDistance())">→</button>
+            </div>
+            <button class="axis-btn" onclick="moveAxis('Y', -getCurrentDistance())">↓</button>
+            <div class="axis-btns-row z-row">
+              <button class="axis-btn" onclick="moveAxis('Z', getCurrentDistance())">Z+</button>
+              <button class="axis-btn home-btn" onclick="homeAxis('Z')">● Z</button>
+              <button class="axis-btn" onclick="moveAxis('Z', -getCurrentDistance())">Z-</button>
+            </div>
+            <div class="extruder-row">
+              <button class="axis-btn" onclick="extrudeFilament(getCurrentDistance())">E+</button>
+              <button class="axis-btn" onclick="extrudeFilament(-getCurrentDistance())">E-</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="console-section">
+        <h2>Консоль</h2>
+        <div class="console-container">
+          <div class="console-output" id="consoleOutput">
+            <div class="console-line">&gt; Принтер готов к работе</div>
+            <div class="console-line">&gt; Температура экструдера: 210°C</div>
+            <div class="console-line">&gt; Температура стола: 60°C</div>
+          </div>
+          <div class="console-input-container">
+            <input type="text" id="gcodeInput" placeholder="G-code..." onkeypress="handleGcodeEnter(event)">
+            <button onclick="sendCustomGcode()">Отправить</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="printer-control.js"></script>
+</body>
+</html>
