@@ -54,6 +54,10 @@ def update_printer_state():
 def index():
     return render_template('dashboard.html')
 
+@app.route('/printer-control')
+def printer_control():
+    return render_template('printer-control.html')
+
 @app.route('/api/state')
 def get_state():
     return jsonify(printer_state)
