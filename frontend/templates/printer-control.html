@@ -72,8 +72,11 @@
           <div class="temp-block">
             <label>Экструдер</label>
             <div class="temp-display">
-              <span class="current-temp">210°C</span>
-              <span class="target-temp">/ 210°C</span>
+              <span class="temp-display-combined">
+                <span class="current-temp current-temp-blue" id="extruderCurrentTemp">210°C</span>
+                <span class="temp-slash">/</span>
+                <span class="target-temp" id="extruderTargetTemp">0</span>
+              </span>
             </div>
             <div class="temp-input-group">
               <input type="number" id="extruderTemp" value="210" min="0" max="300">
@@ -83,8 +86,11 @@
           <div class="temp-block">
             <label>Стол</label>
             <div class="temp-display">
-              <span class="current-temp">60°C</span>
-              <span class="target-temp">/ 60°C</span>
+              <span class="temp-display-combined">
+                <span class="current-temp current-temp-blue" id="bedCurrentTemp">60°C</span>
+                <span class="temp-slash">/</span>
+                <span class="target-temp" id="bedTargetTemp">0</span>
+              </span>
             </div>
             <div class="temp-input-group">
               <input type="number" id="bedTemp" value="60" min="0" max="120">

@@ -104,8 +104,11 @@ h2 { margin: 0 0 7px 0; font-size: 17px; font-weight: 700; color: #e0e0f0; }
 .temp-controls { display: flex; gap: 14px; }
 .temp-block label { font-weight: 600; color: #b0b0d0; margin-bottom: 3px; }
 .temp-display { margin-bottom: 3px; font-size: 16px; font-weight: 700; }
-.current-temp { color: #40a0ff; }
+.temp-display-combined { display: flex; align-items: center; }
+.current-temp-blue { color: #40a0ff; }
+.current-temp-red { color: #ff4060; }
 .target-temp { color: #888; font-size: 14px; }
+.temp-slash { color: #888; margin: 0 5px; font-size: 14px; }
 .temp-input-group { display: flex; gap: 5px; }
 .temp-input-group input { width: 45px; padding: 4px 7px; border: 1px solid #404060; border-radius: 6px; background: #2a2a45; color: #fff; font-size: 14px; }
 .temp-input-group button { padding: 6px 10px; border: none; border-radius: 6px; background: var(--button-color, #4547ff); color: #fff; font-size: 12px; }

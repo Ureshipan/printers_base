@@ -1,4 +1,7 @@
 let currentDistance = 0.1;
+let updateInterval;
+let extruderTempValue = 210; // Храним значение температуры экструдера
+let bedTempValue = 60; // Храним значение температуры стола
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', function() {
@@ -16,6 +19,13 @@ document.addEventListener('DOMContentLoaded', function() {
   const filamentModal = document.getElementById('filamentModal');
   const closeFilamentModal = document.getElementById('closeFilamentModal');
   const confirmFilament = document.getElementById('confirmFilament');
+  
+  // Добавляем обработчики для кнопок навигации
+  const sidebarButtons = document.querySelectorAll('.sidebar-btn');
+  sidebarButtons[0].addEventListener('click', function() {
+    // Переход на панель управления
+    window.location.href = '/';
+  });
   
   printerTitle.addEventListener('click', function() {
     printerDropdown.classList.toggle('show');
@@ -110,56 +120,156 @@ document.addEventListener('DOMContentLoaded', function() {
       currentDistance = parseFloat(this.dataset.distance);
     });
   });
+  
+  // Инициализируем значения температур
+  document.getElementById('extruderTemp').value = extruderTempValue;
+  document.getElementById('bedTemp').value = bedTempValue;
+  
+  // Добавляем обработчики событий для полей ввода температуры
+  document.getElementById('extruderTemp').addEventListener('change', function() {
+    extruderTempValue = parseInt(this.value) || 0;
+  });
+  
+  document.getElementById('bedTemp').addEventListener('change', function() {
+    bedTempValue = parseInt(this.value) || 0;
+  });
+  
+  // Начинаем обновление данных в реальном времени
+  startRealTimeUpdates();
 });
 
 function getCurrentDistance() { return currentDistance; }
 
+// Функция для начала обновления данных в реальном времени
+function startRealTimeUpdates() {
+  // Обновляем данные сразу при загрузке
+  updatePrinterState();
+  
+  // Затем обновляем каждую секунду
+  updateInterval = setInterval(updatePrinterState, 1000);
+}
+
+// Функция для обновления состояния принтера
+async function updatePrinterState() {
+  try {
+    const response = await fetch('/api/state');
+    if (response.ok) {
+      const state = await response.json();
+      
+      // Обновляем отображение температур в новом формате
+      updateTemperatureDisplay('extruder', state.temperature.extruder, state.target_temperature.extruder);
+      updateTemperatureDisplay('bed', state.temperature.bed, state.target_temperature.bed);
+      
+      // Обновляем позиции
+      document.getElementById('posX').textContent = state.position.x.toFixed(1);
+      document.getElementById('posY').textContent = state.position.y.toFixed(1);
+      document.getElementById('posZ').textContent = state.position.z.toFixed(1);
+      
+      // Обновляем статус принтера
+      const printerStatus = document.querySelector('.printer-status');
+      if (state.status === 'printing') {
+        printerStatus.textContent = 'В работе';
+        printerStatus.className = 'printer-status status-work';
+      } else if (state.status === 'ready') {
+        printerStatus.textContent = 'Готов к работе';
+        printerStatus.className = 'printer-status';
+      } else {
+        printerStatus.textContent = state.status;
+        printerStatus.className = 'printer-status';
+      }
+    }
+  } catch (error) {
+    console.error('Ошибка при обновлении состояния принтера:', error);
+  }
+}
+
+// Функция для обновления отображения температуры
+function updateTemperatureDisplay(type, currentTemp, targetTemp) {
+  const currentTempElement = document.getElementById(`${type}CurrentTemp`);
+  const targetTempElement = document.getElementById(`${type}TargetTemp`);
+  
+  // Обновляем текущую температуру
+  currentTempElement.textContent = Math.round(currentTemp) + '°C';
+  
+  // Обновляем целевую температуру
+  if (targetTemp > 0) {
+    targetTempElement.textContent = Math.round(targetTemp) + '°C';
+    // Меняем цвет текущей температуры на красный, если задана целевая температура
+    currentTempElement.className = 'current-temp current-temp-red';
+  } else {
+    targetTempElement.textContent = '0';
+    // Меняем цвет текущей температуры на синий, если целевая температура не задана
+    currentTempElement.className = 'current-temp current-temp-blue';
+  }
+}
+
 // Температурные функции
 function setExtruderTemp() {
-  const temp = document.getElementById('extruderTemp').value;
-  sendGcode(`M104 S${temp}`);
-  addConsoleMessage(`> Установка температуры экструдера: ${temp}°C`);
+  // Используем сохраненное значение, а не значение из поля (которое может быть изменено API)
+  sendCommand('temperature', { target: 'extruder', temperature: extruderTempValue });
+  addConsoleMessage(`> Установка температуры экструдера: ${extruderTempValue}°C`);
 }
 function setBedTemp() {
-  const temp = document.getElementById('bedTemp').value;
-  sendGcode(`M140 S${temp}`);
-  addConsoleMessage(`> Установка температуры стола: ${temp}°C`);
+  // Используем сохраненное значение, а не значение из поля (которое может быть изменено API)
+  sendCommand('temperature', { target: 'bed', temperature: bedTempValue });
+  addConsoleMessage(`> Установка температуры стола: ${bedTempValue}°C`);
 }
 
 // Управление осями
 function moveAxis(axis, distance) {
-  sendGcode(`G91\nG1 ${axis}${distance} F3000\nG90`);
+  const command = `G91\nG1 ${axis}${distance} F3000\nG90`;
+  sendCommand('command', { command: command });
   addConsoleMessage(`> Перемещение ${axis} на ${distance}мм`);
-  updatePosition(axis, distance);
+  // updatePosition(axis, distance); // Убираем симуляцию, так как получаем реальные данные
 }
 function homeAxis(axes) {
-  sendGcode(`G28 ${axes}`);
+  const command = `G28 ${axes}`;
+  sendCommand('home', { axis: axes === '●' ? 'all' : axes });
   addConsoleMessage(`> Возврат в ноль: ${axes}`);
-  if (axes.includes('X') || axes === 'XY') document.getElementById('posX').textContent = '0.0';
-  if (axes.includes('Y') || axes === 'XY') document.getElementById('posY').textContent = '0.0';
-  if (axes.includes('Z')) document.getElementById('posZ').textContent = '0.0';
+  // Сбрасываем позиции на 0 (будут обновлены через API)
+  // document.getElementById('posX').textContent = '0.0';
+  // document.getElementById('posY').textContent = '0.0';
+  // document.getElementById('posZ').textContent = '0.0';
 }
 function extrudeFilament(amount) {
-  sendGcode(`G91\nG1 E${amount} F300\nG90`);
+  const command = `G91\nG1 E${amount} F300\nG90`;
+  sendCommand('command', { command: command });
   const action = amount > 0 ? 'Подача' : 'Втягивание';
   addConsoleMessage(`> ${action} филамента: ${Math.abs(amount)}мм`);
 }
 
-// G-code функции
-function sendGcode(gcode) {
-  console.log('Отправка G-code:', gcode);
-  // Здесь будет реальная отправка команды на принтер
-  setTimeout(() => {
-    addConsoleMessage(`> ${gcode}`);
-    addConsoleMessage('< ok');
-  }, 100);
+// Функция для отправки команд на сервер
+async function sendCommand(endpoint, data) {
+  try {
+    const response = await fetch(`/api/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data)
+    });
+    
+    const result = await response.json();
+    if (result.success) {
+      addConsoleMessage(`< ${result.message}`);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Ошибка при отправке команды:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+    return { success: false, message: error.message };
+  }
 }
 
+// G-code функции
 function sendCustomGcode() {
   const input = document.getElementById('gcodeInput');
   const gcode = input.value.trim();
   if (gcode) {
-    sendGcode(gcode);
+    sendCommand('command', { command: gcode });
     input.value = '';
   }
 }
@@ -180,23 +290,23 @@ function addConsoleMessage(message, type = 'normal') {
   output.scrollTop = output.scrollHeight;
 }
 
-// Обновление позиций (симуляция)
-function updatePosition(axis, delta) {
-  if (axis.match(/[XYZ]/)) {
-    const posElement = document.getElementById('pos' + axis);
-    const currentPos = parseFloat(posElement.textContent);
-    posElement.textContent = (currentPos + delta).toFixed(1);
-  }
-}
+// Обновление позиций теперь происходит через API, поэтому убираем симуляцию
+// function updatePosition(axis, delta) {
+//   if (axis.match(/[XYZ]/)) {
+//     const posElement = document.getElementById('pos' + axis);
+//     const currentPos = parseFloat(posElement.textContent);
+//     posElement.textContent = (currentPos + delta).toFixed(1);
+//   }
+// }
 
-// Симуляция времени печати (можно отключить)
-setInterval(() => {
-  const timeElement = document.getElementById('printTime');
-  const [hours, minutes, seconds] = timeElement.textContent.split(':').map(Number);
-  const totalSeconds = hours * 3600 + minutes * 60 + seconds + 1;
-  const newHours = Math.floor(totalSeconds / 3600);
-  const newMinutes = Math.floor((totalSeconds % 3600) / 60);
-  const newSecs = totalSeconds % 60;
-  timeElement.textContent = 
-    `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}:${String(newSecs).padStart(2, '0')}`;
-}, 1000);
+// Убираем симуляцию времени печати, так как получаем реальные данные
+// setInterval(() => {
+//   const timeElement = document.getElementById('printTime');
+//   const [hours, minutes, seconds] = timeElement.textContent.split(':').map(Number);
+//   const totalSeconds = hours * 3600 + minutes * 60 + seconds + 1;
+//   const newHours = Math.floor(totalSeconds / 3600);
+//   const newMinutes = Math.floor((totalSeconds % 3600) / 60);
+//   const newSecs = totalSeconds % 60;
+//   timeElement.textContent = 
+//     `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}:${String(newSecs).padStart(2, '0')}`;
+// }, 1000);
