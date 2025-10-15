@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Панель управления 3D принтерами</title>
+  <link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <button class="sidebar-btn active">Панель управления</button>
+    <button class="sidebar-btn">Учет времени</button>
+    <div class="sidebar-bottom">
+      <div class="sidebar-link"><span>⚙️</span> Настройки</div>
+      <div class="sidebar-link"><span>ℹ️</span> Информация</div>
+    </div>
+  </aside>
+  <main class="dashboard">
+    <section class="printers-section">
+      <h2>Принтеры</h2>
+      <div class="printers-grid" id="printersGrid"></div>
+    </section>
+    <section class="stats-section">
+      <div class="status-block">
+        <h2>Все (24)</h2>
+        <div class="status-bar">
+          <div class="status-label">В работе</div><div class="bar bar-work"></div><div class="status-value">16</div>
+        </div>
+        <div class="status-bar">
+          <div class="status-label">Простаивает</div><div class="bar bar-idle"></div><div class="status-value">6</div>
+        </div>
+        <div class="status-bar">
+          <div class="status-label">Ошибка</div><div class="bar bar-error"></div><div class="status-value">1</div>
+        </div>
+        <div class="status-bar">
+          <div class="status-label">Тех. осмотр</div><div class="bar bar-service"></div><div class="status-value">1</div>
+        </div>
+      </div>
+      <div class="materials-block">
+        <h2>Материалы</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Название</th>
+              <th>Материал</th>
+              <th>Цвет</th>
+              <th>Общее количество</th>
+              <th>Цена</th>
+            </tr>
+          </thead>
+          <tbody id="materialsTable">
+          </tbody>
+        </table>
+      </div>
+      <div class="queue-block">
+        <h2>Очередь</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Запись модели</th>
+              <th>Назначенный принтер</th>
+              <th>Статус готовности</th>
+            </tr>
+          </thead>
+          <tbody id="queueTable">
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="../static/js/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #232339;
+  color: #fff;
+}
+
+.sidebar {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: 220px;
+  background: linear-gradient(180deg, #272355 70%, #181825 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 28px;
+  z-index: 1;
+}
+
+.sidebar-btn {
+  width: 175px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: none;
+  background: #282879;
+  color: #fff;
+  border-radius: 7px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.sidebar-btn:not(.active) {
+  background: #181836;
+  color: #aaa;
+}
+.sidebar-btn.active { background: #4014fc; }
+.sidebar-bottom {
+  margin-top: auto;
+  padding: 25px 0;
+  width: 100%;
+}
+.sidebar-link {
+  color: #adadc5;
+  margin: 6px 14px;
+  font-size: 16px;
+  cursor: pointer;
+  text-align: left;
+  opacity: 0.8;
+}
+
+.dashboard {
+  margin-left: 220px;
+  padding: 22px 30px 0 44px;
+  min-height: 100vh;
+  display: flex;
+  gap: 38px;
+}
+.printers-section {
+  flex: 1.1;
+  min-width: 410px;
+}
+.stats-section {
+  flex: 1.3;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
+
+.printers-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.printer-card {
+  background: #1a1a2d;
+  border-radius: 17px;
+  padding: 17px 20px 18px 17px;
+  box-shadow: 0 2px 8px #11112366;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+.printer-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px #111123aa;
+  background: #1f1f35;
+}
+.printer-card:hover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(69, 71, 255, 0.1), transparent);
+  transform: translateX(-100%);
+  animation: shine 1.5s infinite;
+}
+@keyframes shine {
+  0% {
+    transform: translateX(-100%);
+  }
+  20% {
+    transform: translateX(-60%);
+  }
+  60% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+.printer-card .printer-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 18px;
+}
+.printer-card .printer-icon {
+  font-size: 28px;
+}
+.printer-card .printer-prop {
+  font-size: 14px;
+  color: #d5d5ed;
+  margin: 3px 0;
+}
+.printer-status { font-weight: bold; }
+.status-work { color: #40a0ff; }
+.status-idle { color: #ffc400; }
+.status-error { color: #ff4488; }
+.status-service { color: #e162e7; }
+.progress-bar {
+  margin-top: 8px;
+  height: 8px;
+  border-radius: 6px;
+  background: #282851;
+  overflow: hidden;
+  box-shadow: 0 1px 5px #1f1f3e67;
+}
+.progress-inner {
+  height: 100%;
+}
+.progress-work { background: #4547ff; }
+.progress-idle { background: #ffc400; }
+.progress-error { background: #fa3280; }
+.progress-service { background: #e162e7; }
+
+.status-block { margin-bottom: 18px; }
+.status-bar {
+  display: flex; align-items: center;
+  margin-bottom: 7px;
+}
+.status-label { width: 110px; font-size: 15px; }
+.status-value { width: 28px; text-align: right; font-weight: 600; }
+.bar {
+  flex: 1;
+  height: 5px;
+  margin: 0 8px;
+  border-radius: 4px;
+}
+.bar-work { background: #4547ff; }
+.bar-idle { background: #ffc400; }
+.bar-error { background: #fa3280; }
+.bar-service { background: #e162e7; }
+
+.materials-block table, .queue-block table {
+  width: 100%;
+  border-spacing: 0;
+  font-size: 15px;
+  background: #161625;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.materials-block th, .queue-block th {
+  background: #292949;
+  color: #b7b9e0;
+  font-weight: 700;
+  padding: 8px 4px;
+}
+.materials-block td, .queue-block td {
+  padding: 6px 6px;
+  text-align: left;
+  border-bottom: 1px solid #232351;
+}
+.materials-block tr:last-child td, .queue-block tr:last-child td {
+  border-bottom: none;
+}
+.queue-block th:last-child, .queue-block td:last-child { text-align: right; }

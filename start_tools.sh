@@ -25,6 +25,7 @@ show_menu() {
     echo -e " ${BLUE}3.${NC} WebSocket слушатель (websocket_listener.py)"
     echo -e " ${BLUE}4.${NC} Отправка G-Code команд (send_gcode.py)"
     echo -e " ${BLUE}5.${NC} Интерактивный инструмент (moonraker_tool.py)"
+    echo -e " ${BLUE}6.${NC} Веб-интерфейс (web_interface.py)"
     echo ""
     echo -e " ${YELLOW}i.${NC} Установить зависимости"
     echo -e " ${YELLOW}c.${NC} Настроить IP-адрес принтера"
@@ -37,7 +38,7 @@ show_menu() {
 run_api_test() {
     clear
     echo -e "${BLUE}Запуск проверки API...${NC}"
-    python3 test_moonraker_api.py
+    python3 backend/services/test_moonraker_api.py
     echo ""
     read -p "Нажмите Enter для продолжения..."
 }
@@ -54,7 +55,7 @@ run_monitor() {
     interval=${interval:-5}
     
     clear
-    python3 monitor_printer.py --host $host --interval $interval
+    python3 backend/services/monitor_printer.py --host $host --interval $interval
     echo ""
     read -p "Нажмите Enter для продолжения..."
 }
@@ -69,7 +70,7 @@ run_websocket() {
     host=${host:-192.168.10.14}
     
     clear
-    python3 websocket_listener.py --host $host
+    python3 backend/services/websocket_listener.py --host $host
     echo ""
     read -p "Нажмите Enter для продолжения..."
 }
@@ -86,9 +87,9 @@ run_gcode() {
     
     clear
     if [ -z "$gcode" ]; then
-        python3 send_gcode.py --host $host
+        python3 backend/services/send_gcode.py --host $host
     else
-        python3 send_gcode.py --host $host --gcode "$gcode"
+        python3 backend/services/send_gcode.py --host $host --gcode "$gcode"
     fi
     echo ""
     read -p "Нажмите Enter для продолжения..."
@@ -104,7 +105,22 @@ run_tool() {
     host=${host:-192.168.10.14}
     
     clear
-    python3 moonraker_tool.py --host $host
+    python3 backend/services/moonraker_tool.py --host $host
+    echo ""
+    read -p "Нажмите Enter для продолжения..."
+}
+
+run_web() {
+    clear
+    echo ""
+    echo -e "${BLUE}Запуск веб-интерфейса...${NC}"
+    echo ""
+    read -p "Введите IP-адрес принтера (или нажмите Enter для 192.168.10.14): " host
+    
+    host=${host:-192.168.10.14}
+    
+    clear
+    python3 backend/api/web_interface.py --host $host
     echo ""
     read -p "Нажмите Enter для продолжения..."
 }
@@ -135,11 +151,12 @@ config() {
     echo -e "${BLUE}Обновление IP-адреса в скриптах...${NC}"
     echo ""
     
-    sed -i "s/192\.168\.10\.14/$new_ip/g" test_moonraker_api.py
-    sed -i "s/192\.168\.10\.14/$new_ip/g" monitor_printer.py
-    sed -i "s/192\.168\.10\.14/$new_ip/g" websocket_listener.py
-    sed -i "s/192\.168\.10\.14/$new_ip/g" send_gcode.py
-    sed -i "s/192\.168\.10\.14/$new_ip/g" moonraker_tool.py
+    sed -i "s/192\.168\.10\.14/$new_ip/g" backend/services/test_moonraker_api.py
+    sed -i "s/192\.168\.10\.14/$new_ip/g" backend/services/monitor_printer.py
+    sed -i "s/192\.168\.10\.14/$new_ip/g" backend/services/websocket_listener.py
+    sed -i "s/192\.168\.10\.14/$new_ip/g" backend/services/send_gcode.py
+    sed -i "s/192\.168\.10\.14/$new_ip/g" backend/services/moonraker_tool.py
+    sed -i "s/192\.168\.10\.14/$new_ip/g" backend/api/web_interface.py
     
     echo -e "${GREEN}IP-адрес обновлен во всех скриптах!${NC}"
     read -p "Нажмите Enter для продолжения..."
@@ -158,6 +175,7 @@ while true; do
         3) run_websocket ;;
         4) run_gcode ;;
         5) run_tool ;;
+        6) run_web ;;
         i) install_deps ;;
         c) config ;;
         q) 
@@ -173,4 +191,4 @@ while true; do
             sleep 2
             ;;
     esac
-done 
+done
