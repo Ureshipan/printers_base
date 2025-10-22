@@ -1,0 +1,23 @@
+[Unit]
+Description=Bluetooth IP Advertisement Service for Klipper
+Documentation=https://github.com/fylhtq7779
+After=bluetooth.target network.target klipper.service
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/klipper_services
+ExecStart=/usr/bin/python3 /home/pi/klipper_services/bluetooth_ip_server.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Настройки безопасности
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
