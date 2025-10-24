@@ -1,10 +1,22 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Discovery модуль для автоматического обнаружения 3D-принтеров
-Поддерживает Bluetooth, mDNS, SSDP и ручную конфигурацию
+Discovery module for automatic Raspberry Pi detection via UDP multicast
+Supports multiple printers without router configuration
 """
 
-from .config_manager import PrinterConfig
-from .integration_module import PrinterDiscoveryManager
+__version__ = "2.0.0"
+__author__ = "fylhtq7779"
 
-__version__ = "1.0.0"
-__all__ = ['PrinterConfig', 'PrinterDiscoveryManager']
+from .pi_discover import listen_for_printers, PrinterListener
+from .pi_advertiser import advertise_printer
+from .utils import get_local_ip, save_discovered_printers, load_discovered_printers
+
+__all__ = [
+    'listen_for_printers',
+    'PrinterListener',
+    'advertise_printer',
+    'get_local_ip',
+    'save_discovered_printers',
+    'load_discovered_printers'
+]
