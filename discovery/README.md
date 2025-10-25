@@ -56,12 +56,14 @@ discovery/
    [Service]
    Type=simple
    User=pi
-   WorkingDirectory=/home/pi/printers_base
-   ExecStart=/usr/bin/python3 /home/pi/printers_base/discovery/pi_advertiser.py printer-01
+   WorkingDirectory=/home/pi/gits/printers_base
+   ExecStart=/usr/bin/python3 /home/pi/gits/printers_base/discovery/pi_advertiser.py printer-01
    Restart=always
+   RestartSec=10
    
    [Install]
    WantedBy=multi-user.target
+
    ```
    
    Активация:
