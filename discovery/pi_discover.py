@@ -103,12 +103,12 @@ def main():
         print("\nОбнаружены Raspberry Pi принтеры по адресам:")
         for i, ip in enumerate(all_found, 1):
             print(f"  [{i}] {ip}")
-        if not args.try_ssh:
+        if args.try_ssh:
             print("\nПРОБА ПОДКЛЮЧЕНИЯ ПО SSH (user/password pi/pi):")
             for ip in all_found:
                 ok, info = try_ssh(ip)
                 if ok:
-                    print(f"✓ {ip} — SSH: OK, hostname: {info}")
+                    print(f"✓ {ip} — SSH: {ok}, hostname: {info}")
                 else:
                     print(f"✗ {ip} — SSH: FAILED [{info}]")
     else:
