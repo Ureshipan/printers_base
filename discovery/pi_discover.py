@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Автоматический поиск Raspberry Pi с Moonraker по всем локальным подсетям
+Автоматический поиск Raspberry Pi с Moonraker и попытка подключения по SSH
 """
 
 import socket
 import concurrent.futures
 import argparse
-from typing import List, Dict
 import netifaces
-
+import paramiko
 
 def get_all_local_subnets():
     """Получить все локальные подсети на устройстве"""
@@ -28,7 +27,6 @@ def get_all_local_subnets():
         print(f"⚠ Ошибка определения подсетей: {e}")
     return subnets
 
-
 def check_moonraker(ip, port=7125, timeout=0.3):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -39,6 +37,18 @@ def check_moonraker(ip, port=7125, timeout=0.3):
     except:
         return None
 
+def try_ssh(ip, username="pi", password="pi", timeout=3):
+    """Пробует подключиться по SSH, возвращает True/False и приветствие, если получилось"""
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        ssh.connect(ip, username=username, password=password, timeout=timeout)
+        stdin, stdout, stderr = ssh.exec_command("hostname")
+        hostname = stdout.read().decode().strip()
+        ssh.close()
+        return True, hostname
+    except Exception as e:
+        return False, str(e)
 
 def scan_subnet_for_printers(subnet=None, start=1, end=254, max_workers=50):
     if subnet is None:
@@ -47,7 +57,6 @@ def scan_subnet_for_printers(subnet=None, start=1, end=254, max_workers=50):
 
     print(f"Сканируем подсеть {subnet}.{start}-{end} на порт 7125 (Moonraker)")
     found_printers = []
-
     def check_host(host_num):
         ip = f"{subnet}.{host_num}"
         if check_moonraker(ip):
@@ -65,24 +74,18 @@ def scan_subnet_for_printers(subnet=None, start=1, end=254, max_workers=50):
     print(f"Всего найдено: {len(found_printers)}")
     return found_printers
 
-
 def main():
     parser = argparse.ArgumentParser(
-        description='Автоматический поиск Raspberry Pi принтеров во всех локальных подсетях'
+        description='Автоматический поиск Raspberry Pi принтеров во всех локальных подсетях с подключением по SSH'
     )
-    parser.add_argument(
-        '--start', type=int, default=1,
-        help='Начальный хост для сканирования (default: 1)'
-    )
-    parser.add_argument(
-        '--end', type=int, default=254,
-        help='Конечный хост для сканирования (default: 254)'
-    )
-    parser.add_argument(
-        '-w', '--workers', type=int, default=50,
-        help='Число потоков (default: 50)'
-    )
-
+    parser.add_argument('--start', type=int, default=1,
+        help='Начальный хост для сканирования (default: 1)')
+    parser.add_argument('--end', type=int, default=254,
+        help='Конечный хост для сканирования (default: 254)')
+    parser.add_argument('-w', '--workers', type=int, default=50,
+        help='Число потоков (default: 50)')
+    parser.add_argument('--try-ssh', action='store_true',
+        help='Пробовать подключиться по SSH к найденным устройствам')
     args = parser.parse_args()
 
     subnets = get_all_local_subnets()
@@ -100,9 +103,16 @@ def main():
         print("\nОбнаружены Raspberry Pi принтеры по адресам:")
         for i, ip in enumerate(all_found, 1):
             print(f"  [{i}] {ip}")
+        if not args.try_ssh:
+            print("\nПРОБА ПОДКЛЮЧЕНИЯ ПО SSH (user/password pi/pi):")
+            for ip in all_found:
+                ok, info = try_ssh(ip)
+                if ok:
+                    print(f"✓ {ip} — SSH: OK, hostname: {info}")
+                else:
+                    print(f"✗ {ip} — SSH: FAILED [{info}]")
     else:
         print("\nНе найдено ни одного принтера во всех локальных подсетях.")
-
 
 if __name__ == '__main__':
     main()
