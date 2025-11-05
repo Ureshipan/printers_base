@@ -15,7 +15,7 @@ app = Flask(__name__,
             static_folder='../../frontend/static')
 
 # Конфигурация
-PRINTER_HOST = "192.168.10.14"
+PRINTER_HOST = "172.22.112.53"
 PRINTER_PORT = "7125"
 BASE_URL = f"http://{PRINTER_HOST}:{PRINTER_PORT}"
 
