@@ -9,7 +9,7 @@ import socket
 import time
 import json
 import argparse
-from utils import get_local_ip
+from discovery.utils import get_local_ip
 
 BROADCAST_IP = '255.255.255.255'
 PORT = 50000

@@ -3,3 +3,4 @@
 
 # Network interface detection (recommended, fallback available)
 netifaces
+paramiko

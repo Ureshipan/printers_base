@@ -6,6 +6,7 @@ import threading
 import time
 import os
 import sys
+from discovery.pi_discover import scan_no_cli
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -15,7 +16,11 @@ app = Flask(__name__,
             static_folder='../../frontend/static')
 
 # Конфигурация
-PRINTER_HOST = "192.168.10.14"
+aviable_printers = scan_no_cli()
+if len(aviable_printers) > 0:
+    PRINTER_HOST = aviable_printers[0]
+else:
+    PRINTER_HOST = "172.22.112.68"
 PRINTER_PORT = "7125"
 BASE_URL = f"http://{PRINTER_HOST}:{PRINTER_PORT}"
 

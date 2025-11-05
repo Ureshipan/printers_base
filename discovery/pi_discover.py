@@ -113,6 +113,17 @@ def main():
                     print(f"✗ {ip} — SSH: FAILED [{info}]")
     else:
         print("\nНе найдено ни одного принтера во всех локальных подсетях.")
+        
 
-if __name__ == '__main__':
-    main()
+def scan_no_cli(start=1, end=254, workers=50) -> list:
+    moonraker_hosts = []
+    subnets = get_all_local_subnets()
+    if subnets:
+        for subnet, ip, iface in subnets:
+            print(f"\nСканируем подсеть {subnet}.x через интерфейс {iface} (IP {ip})")
+            found = scan_subnet_for_printers(subnet, start, end, workers)
+            moonraker_hosts.extend(found)
+    return moonraker_hosts 
+
+# if __name__ == '__main__':
+#     main()
