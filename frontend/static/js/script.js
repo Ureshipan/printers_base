@@ -103,8 +103,22 @@ queue.forEach(q => {
 document.addEventListener('DOMContentLoaded', async function() {
   // Добавляем обработчики для кнопок навигации
   const sidebarButtons = document.querySelectorAll('.sidebar-btn');
-  sidebarButtons[0].addEventListener('click', function() {
-    // Уже находимся на панели управления, ничего не делаем
+  const currentPath = window.location.pathname;
+  sidebarButtons.forEach(button => {
+    const route = button.dataset.route;
+    if (!route) {
+      return;
+    }
+    if (route === currentPath) {
+      button.classList.add('active');
+    } else {
+      button.classList.remove('active');
+    }
+    button.addEventListener('click', function() {
+      if (window.location.pathname !== route) {
+        window.location.href = route;
+      }
+    });
   });
   
   const printers = await fetchPrinters();

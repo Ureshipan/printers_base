@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Планирование печати</title>
+  <link rel="stylesheet" href="../static/css/style.css">
+  <link rel="stylesheet" href="../static/css/planning.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <button class="sidebar-btn" data-route="/">Панель управления</button>
+    <button class="sidebar-btn active" data-route="/planning">Планирование</button>
+    <button class="sidebar-btn" data-route="/printer-control">Управление принтером</button>
+    <div class="sidebar-bottom">
+      <div class="sidebar-link"><span>⚙️</span> Настройки</div>
+      <div class="sidebar-link"><span>ℹ️</span> Информация</div>
+    </div>
+  </aside>
+
+  <main class="planning-main">
+    <header class="planning-header">
+      <div>
+        <h1>Планирование печати</h1>
+        <p class="planning-subtitle">Управляйте задачами печати, загружайте G-code и распределяйте загрузку принтеров</p>
+      </div>
+      <button id="openTaskModal" class="primary-btn">Создать задачу</button>
+    </header>
+
+    <section class="planning-content">
+      <div id="planningMessage" class="planning-message" hidden></div>
+      <div class="planning-grid">
+        <section class="tasks-table-card">
+          <div class="card-header">
+            <h2>Текущие задачи</h2>
+            <div class="table-controls">
+              <select id="filterProject" class="filter-select">
+                <option value="">Все проекты</option>
+              </select>
+              <select id="filterStatus" class="filter-select">
+                <option value="">Все статусы</option>
+                <option value="pending">Ожидает</option>
+                <option value="queued">В очереди</option>
+                <option value="printing">Печатается</option>
+                <option value="completed">Завершена</option>
+                <option value="cancelled">Отменена</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="tasks-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Проект</th>
+                  <th>Принтер</th>
+                  <th>Статус</th>
+                  <th>Материал · Время</th>
+                  <th>G-code</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tasksTableBody">
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="projects-card">
+          <div class="card-header">
+            <h2>Проекты</h2>
+            <button id="openProjectModal" class="ghost-btn ghost-small">Новый проект</button>
+          </div>
+          <ul id="projectsList" class="projects-list"></ul>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop hidden" id="taskModal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h2 id="modalTitle">Новая задача</h2>
+        <button id="closeTaskModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="taskForm" class="modal-form">
+        <div class="form-grid">
+          <label>
+            Название
+            <input type="text" name="name" placeholder="Например, Кронштейн v2">
+          </label>
+          <label>
+            Проект
+            <select name="project_id" required></select>
+          </label>
+          <label>
+            Принтер
+            <select name="printer_id" required></select>
+          </label>
+          <label>
+            Катушка
+            <select name="coil_id">
+              <option value="">Не выбрано</option>
+            </select>
+          </label>
+          <label>
+            Статус
+            <select name="status">
+              <option value="pending">Ожидает</option>
+              <option value="queued">В очереди</option>
+              <option value="printing">Печатается</option>
+              <option value="completed">Завершена</option>
+              <option value="cancelled">Отменена</option>
+            </select>
+          </label>
+          <label>
+            Прогресс (%)
+            <input type="number" name="progress" min="0" max="100" step="1" value="0">
+          </label>
+          <label>
+            Расход материала (г)
+            <input type="number" name="material_amount" min="0" step="0.1" placeholder="Авто после G-code">
+          </label>
+          <label>
+            Начало
+            <input type="datetime-local" name="time_start">
+          </label>
+          <label>
+            Окончание
+            <input type="datetime-local" name="time_end">
+          </label>
+        </div>
+        <label class="notes-field">
+          Комментарий
+          <textarea name="notes" rows="3" placeholder="Особенности печати, напоминания..."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="cancelTaskChanges">Отмена</button>
+          <button type="submit" class="primary-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <input type="file" id="gcodeFileInput" class="hidden" accept=".gcode,.gco,.gc,.g">
+
+  <div class="modal-backdrop hidden" id="projectModal">
+    <div class="modal-window project-window">
+      <div class="modal-header">
+        <h2 id="projectModalTitle">Новый проект</h2>
+        <button id="closeProjectModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="projectForm" class="modal-form project-form">
+        <label>
+          Название проекта
+          <input type="text" name="name" placeholder="Например, Партия деталей для клиента" required>
+        </label>
+        <label>
+          Описание
+          <textarea name="desc" rows="3" placeholder="Цель печати, сроки, контакт"></textarea>
+        </label>
+        <label>
+          Цвет проекта (HEX)
+          <input type="text" name="color" placeholder="#6c5ce7">
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="cancelProjectChanges">Отмена</button>
+          <button type="submit" class="primary-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="../static/js/planning.js"></script>
+</body>
+</html>
+

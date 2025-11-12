@@ -22,9 +22,22 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Добавляем обработчики для кнопок навигации
   const sidebarButtons = document.querySelectorAll('.sidebar-btn');
-  sidebarButtons[0].addEventListener('click', function() {
-    // Переход на панель управления
-    window.location.href = '/';
+  const currentPath = window.location.pathname;
+  sidebarButtons.forEach(button => {
+    const route = button.dataset.route;
+    if (!route) {
+      return;
+    }
+    if (route === currentPath) {
+      button.classList.add('active');
+    } else {
+      button.classList.remove('active');
+    }
+    button.addEventListener('click', function() {
+      if (window.location.pathname !== route) {
+        window.location.href = route;
+      }
+    });
   });
   
   printerTitle.addEventListener('click', function() {
