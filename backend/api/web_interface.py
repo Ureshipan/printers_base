@@ -16,8 +16,6 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from discovery.pi_discover import scan_no_cli
-
 # Add the project root to the Python path
 PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -38,9 +36,11 @@ app = Flask(
 # ---------------------------------------------------------------------------
 DEFAULT_PRINTER_PORT = int(os.environ.get("MOONRAKER_PORT", "7125"))
 DEFAULT_FALLBACK_HOST = os.environ.get("MOONRAKER_DEFAULT_HOST", "172.22.112.68")
+DISCOVERY_ENABLED = os.environ.get("PRINTER_DISCOVERY_ENABLED", "0") == "1"
 DISCOVERY_INTERVAL_SECONDS = int(os.environ.get("PRINTER_DISCOVERY_INTERVAL", "60"))
 PRINTER_STATE_INTERVAL = float(os.environ.get("PRINTER_STATE_INTERVAL", "1.0"))
 ALLOWED_GCODE_EXTENSIONS = {"gcode", "gco", "gc", "g"}
+ALLOWED_VIRTUAL_STATUSES = {"idle", "work", "error", "service", "offline", "printing", "ready"}
 
 DATABASE_PATH = os.path.join(PROJECT_ROOT, 'backend', 'db', 'database.db')
 UPLOAD_DIR = os.path.join(PROJECT_ROOT, 'backend', 'uploads', 'gcode')
@@ -200,9 +200,51 @@ def fetch_printer_display_name(host: str, port: int, printer_name: Optional[str]
     return printer_name or host
 
 
+def probe_moonraker_host(host: str, port: int, timeout: int = 3) -> bool:
+    """Проверить, отвечает ли Moonraker по указанному адресу."""
+    base_url = f"http://{host}:{port}"
+    try:
+        response = http.get(f"{base_url}/server/info", timeout=timeout)
+        response.raise_for_status()
+        return True
+    except requests.RequestException:
+        return False
+
+
+def upsert_printers_for_host(host: str, port: int) -> List[Printer]:
+    """Создать или обновить записи принтеров для указанного Moonraker-хоста."""
+    printers_on_host = fetch_printers_for_host(host, port)
+    added = []
+    for printer_entry in printers_on_host:
+        moonraker_printer = printer_entry.get("moonraker_printer")
+        display_name = printer_entry.get("display_name") or fetch_printer_display_name(
+            host, port, moonraker_printer
+        )
+        printer = db.upsert_printer(
+            name=display_name or host,
+            moonraker_host=host,
+            moonraker_port=port,
+            moonraker_printer=moonraker_printer,
+            is_active=True,
+        )
+        added.append(printer)
+    return added
+
+
 def synchronize_printers_with_db():
-    discovered_hosts = scan_no_cli()
-    if not discovered_hosts:
+    # Network discovery is disabled by default to avoid broadcast scans.
+    # Set PRINTER_DISCOVERY_ENABLED=1 to re-enable auto-discovery.
+    if not DISCOVERY_ENABLED:
+        return
+
+    discovered_hosts = []
+    try:
+        from discovery.pi_discover import scan_no_cli
+        discovered_hosts = scan_no_cli()
+    except Exception as exc:  # pylint: disable=broad-except
+        app.logger.warning("Не удалось выполнить поиск принтеров: %s", exc)
+
+    if not discovered_hosts and DEFAULT_FALLBACK_HOST:
         discovered_hosts = [DEFAULT_FALLBACK_HOST]
 
     discovered_keys = set()
@@ -240,6 +282,11 @@ def build_default_state() -> Dict:
 
 
 def fetch_printer_state(printer: Printer) -> Dict:
+    if getattr(printer, "is_virtual", False):
+        state = build_default_state()
+        state["status"] = getattr(printer, "virtual_status", "idle") or "idle"
+        return state
+
     state = build_default_state()
     base_url = build_base_url(printer)
     params = enrich_params_with_printer(printer, [
@@ -291,7 +338,7 @@ def update_printer_states_loop():
     last_discovery = 0
     while True:
         now = time.time()
-        if now - last_discovery > DISCOVERY_INTERVAL_SECONDS:
+        if DISCOVERY_ENABLED and now - last_discovery > DISCOVERY_INTERVAL_SECONDS:
             synchronize_printers_with_db()
             last_discovery = now
 
@@ -405,26 +452,99 @@ def planning():
 # ---------------------------------------------------------------------------
 # Routes - API
 # ---------------------------------------------------------------------------
-@app.route('/api/printers')
-def api_get_printers():
-    printers = db.get_printers(include_inactive=False)
-    result = []
-    with printer_state_lock:
-        for printer in printers:
-            state = printer_states.get(printer.id, build_default_state())
-            mapped_status = STATE_MAP.get(state["status"], state["status"])
-            result.append({
+@app.route('/api/printers', methods=['GET', 'POST'])
+def api_printers():
+    if request.method == 'GET':
+        printers = db.get_printers(include_inactive=False)
+        result = []
+        with printer_state_lock:
+            for printer in printers:
+                state = printer_states.get(printer.id, build_default_state())
+                mapped_status = STATE_MAP.get(state["status"], state["status"])
+                result.append({
+                    "id": printer.id,
+                    "name": printer.name or f"Принтер #{printer.id}",
+                    "model": state.get("filename") or "Неизвестная модель",
+                    "status": mapped_status,
+                    "percent": state.get("progress", 0),
+                    "lastServed": printer.last_service or (
+                        printer.last_seen.strftime("%d.%m.%Y") if printer.last_seen else datetime.now().strftime("%d.%m.%Y")
+                    ),
+                    "material": "PLA",  # Placeholder until material tracking is implemented
+                    "is_virtual": getattr(printer, "is_virtual", False),
+                })
+        return jsonify(result)
+
+    data = request.get_json(force=True, silent=True) or {}
+    host = (data.get('host') or '').strip()
+    port = data.get('port', DEFAULT_PRINTER_PORT)
+    if not host:
+        return jsonify({"success": False, "message": "IP адрес обязателен"}), 400
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "Порт должен быть числом"}), 400
+
+    if not probe_moonraker_host(host, port):
+        return jsonify({"success": False, "message": f"Не удалось подключиться к Moonraker на {host}:{port}"}), 400
+
+    printers_added = upsert_printers_for_host(host, port)
+    if not printers_added:
+        return jsonify({"success": False, "message": "На указанном хосте не найдено ни одного принтера"}), 404
+
+    return jsonify({
+        "success": True,
+        "printers": [
+            {
                 "id": printer.id,
-                "name": printer.name or f"Принтер #{printer.id}",
-                "model": state.get("filename") or "Неизвестная модель",
-                "status": mapped_status,
-                "percent": state.get("progress", 0),
-                "lastServed": printer.last_service or (
-                    printer.last_seen.strftime("%d.%m.%Y") if printer.last_seen else datetime.now().strftime("%d.%m.%Y")
-                ),
-                "material": "PLA",  # Placeholder until material tracking is implemented
-            })
-    return jsonify(result)
+                "name": printer.name,
+                "host": printer.moonraker_host,
+                "port": printer.moonraker_port,
+                "moonraker_printer": printer.moonraker_printer,
+                "is_virtual": getattr(printer, "is_virtual", False),
+            }
+            for printer in printers_added
+        ],
+    })
+
+
+@app.route('/api/printers/virtual', methods=['POST'])
+def api_add_virtual_printer():
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get('name') or '').strip()
+    status = (data.get('status') or 'idle').strip().lower()
+    if not name:
+        return jsonify({"success": False, "message": "Имя принтера обязательно"}), 400
+    if status not in ALLOWED_VIRTUAL_STATUSES:
+        return jsonify({"success": False, "message": "Недопустимый статус"}), 400
+
+    printer = db.add_virtual_printer(name=name, status=status)
+    # Записываем стартовое состояние, чтобы сразу отобразилось в UI
+    with printer_state_lock:
+        printer_states[printer.id] = {
+            **build_default_state(),
+            "status": status,
+            "last_update": datetime.now(timezone.utc).isoformat(),
+        }
+    return jsonify({
+        "success": True,
+        "printer": {
+            "id": printer.id,
+            "name": printer.name,
+            "status": status,
+            "is_virtual": True,
+        }
+    })
+
+
+@app.route('/api/printers/<int:printer_id>', methods=['DELETE'])
+def api_delete_printer(printer_id: int):
+    deleted = db.delete_printer(printer_id)
+    if deleted:
+        with printer_state_lock:
+            printer_states.pop(printer_id, None)
+        return jsonify({"success": True})
+    return jsonify({"success": False, "message": "Принтер не найден"}), 404
 
 
 @app.route('/api/state')

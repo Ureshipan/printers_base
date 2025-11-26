@@ -266,17 +266,50 @@
 }
 
 .planning-message {
-  border-radius: 12px;
-  padding: 14px 18px;
-  background: rgba(69, 71, 255, 0.16);
-  border: 1px solid rgba(120, 124, 255, 0.32);
-  color: #d9dbff;
+  display: none;
 }
 
 .planning-message.error {
-  background: rgba(255, 109, 145, 0.16);
-  border-color: rgba(255, 138, 164, 0.32);
-  color: #ffdbe6;
+  display: none;
+}
+
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.toast {
+  min-width: 260px;
+  max-width: 320px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(30, 31, 55, 0.95);
+  border: 1px solid rgba(104, 114, 255, 0.35);
+  color: #e8e9ff;
+  box-shadow: 0 8px 24px rgba(8, 9, 24, 0.5);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  animation: toast-slide 0.25s ease-out;
+}
+
+.toast-error {
+  border-color: rgba(255, 138, 164, 0.45);
+  background: rgba(68, 16, 38, 0.92);
+  color: #ffd8e6;
+}
+
+@keyframes toast-slide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .modal-backdrop {
@@ -412,4 +445,3 @@
     padding: 22px;
   }
 }
-

@@ -17,23 +17,27 @@
   </aside>
   <main class="dashboard">
     <section class="printers-section">
-      <h2>Принтеры</h2>
+      <div class="section-header">
+        <h2>Принтеры</h2>
+        <button class="primary-btn" id="openAddPrinterBtn">+ Добавить принтер</button>
+        <button class="secondary-btn" id="openAddVirtualBtn">+ Виртуальный</button>
+      </div>
       <div class="printers-grid" id="printersGrid"></div>
     </section>
     <section class="stats-section">
       <div class="status-block">
-        <h2>Все (24)</h2>
+        <h2>Все (<span id="statTotal">0</span>)</h2>
         <div class="status-bar">
-          <div class="status-label">В работе</div><div class="bar bar-work"></div><div class="status-value">16</div>
+          <div class="status-label">В работе</div><div class="bar bar-work"></div><div class="status-value" id="statWork">0</div>
         </div>
         <div class="status-bar">
-          <div class="status-label">Простаивает</div><div class="bar bar-idle"></div><div class="status-value">6</div>
+          <div class="status-label">Простаивает</div><div class="bar bar-idle"></div><div class="status-value" id="statIdle">0</div>
         </div>
         <div class="status-bar">
-          <div class="status-label">Ошибка</div><div class="bar bar-error"></div><div class="status-value">1</div>
+          <div class="status-label">Ошибка</div><div class="bar bar-error"></div><div class="status-value" id="statError">0</div>
         </div>
         <div class="status-bar">
-          <div class="status-label">Тех. осмотр</div><div class="bar bar-service"></div><div class="status-value">1</div>
+          <div class="status-label">Тех. осмотр</div><div class="bar bar-service"></div><div class="status-value" id="statService">0</div>
         </div>
       </div>
       <div class="materials-block">
@@ -68,6 +72,60 @@
       </div>
     </section>
   </main>
+
+  <div class="modal-overlay" id="addPrinterModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Добавить принтер</h3>
+        <button class="icon-btn" id="closeAddPrinterBtn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="addPrinterForm" class="modal-body">
+        <label class="modal-field">
+          <span>IP адрес</span>
+          <input type="text" id="printerIpInput" placeholder="192.168.0.50" required>
+        </label>
+        <label class="modal-field">
+          <span>Порт</span>
+          <input type="number" id="printerPortInput" value="7125" min="1" max="65535" required>
+        </label>
+        <div class="modal-error" id="addPrinterError" role="alert"></div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelAddPrinterBtn">Отмена</button>
+          <button type="submit" class="primary-btn">Добавить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="addVirtualModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Виртуальный принтер</h3>
+        <button class="icon-btn" id="closeAddVirtualBtn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="addVirtualForm" class="modal-body">
+        <label class="modal-field">
+          <span>Имя принтера</span>
+          <input type="text" id="virtualNameInput" placeholder="Демо принтер" required>
+        </label>
+        <label class="modal-field">
+          <span>Статус</span>
+          <select id="virtualStatusInput">
+            <option value="idle">Простаивает</option>
+            <option value="work">В работе</option>
+            <option value="error">Ошибка</option>
+            <option value="service">Тех. осмотр</option>
+          </select>
+        </label>
+        <div class="modal-error" id="addVirtualError" role="alert"></div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelAddVirtualBtn">Отмена</button>
+          <button type="submit" class="primary-btn">Добавить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="../static/js/script.js"></script>
 </body>
 </html>

@@ -107,6 +107,7 @@ async function loadTasks() {
     const response = await fetchJson('/api/tasks');
     tasks = response;
     renderTasks();
+    populateProjectsList();
   } catch (error) {
     showMessage('Не удалось загрузить задачи: ' + error.message, true);
   }
@@ -135,7 +136,7 @@ function populateSelectOptions() {
   const printerSelect = taskForm.elements['printer_id'];
   const coilSelect = taskForm.elements['coil_id'];
 
-  projectSelect.innerHTML = '';
+  projectSelect.innerHTML = '<option value=\"\">Выберите проект</option>';
   projects.forEach(project => {
     const option = document.createElement('option');
     option.value = project.id;
@@ -387,6 +388,15 @@ async function handleTaskSubmit(event) {
     payload.coil_id = parseInt(coilId, 10);
   }
 
+  if (!payload.project_id || Number.isNaN(payload.project_id)) {
+    showMessage('Выберите проект для задачи', true);
+    return;
+  }
+  if (!payload.printer_id || Number.isNaN(payload.printer_id)) {
+    showMessage('Выберите принтер для задачи', true);
+    return;
+  }
+
   try {
     if (currentTaskId) {
       await fetchJson(`/api/tasks/${currentTaskId}`, {
@@ -412,12 +422,18 @@ async function handleTaskSubmit(event) {
 }
 
 function showMessage(text, isError = false) {
-  planningMessage.textContent = text;
-  planningMessage.hidden = false;
-  planningMessage.classList.toggle('error', isError);
+  const container = document.getElementById('toastContainer');
+  if (!container) {
+    console.warn(text);
+    return;
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast${isError ? ' toast-error' : ''}`;
+  toast.textContent = text;
+  container.appendChild(toast);
   setTimeout(() => {
-    planningMessage.hidden = true;
-  }, 4000);
+    toast.remove();
+  }, 3200);
 }
 
 function triggerGcodeUpload(taskId) {
@@ -586,4 +602,3 @@ async function confirmAndDeleteProject(projectId) {
     showMessage(error.message, true);
   }
 }
-

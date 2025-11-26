@@ -31,6 +31,8 @@ class Printer(Base):
     moonraker_printer = Column(String)  # Optional identifier for multi-printer hosts
     is_active = Column(Boolean, default=True)
     last_seen = Column(DateTime)
+    is_virtual = Column(Boolean, default=False)
+    virtual_status = Column(String, default="idle")
 
     tasks = relationship('Task', back_populates='printer')
 
@@ -113,6 +115,8 @@ class DBModel:
             self._add_column_if_missing(conn, 'printers', 'moonraker_printer', "TEXT")
             self._add_column_if_missing(conn, 'printers', 'is_active', "BOOLEAN DEFAULT 1")
             self._add_column_if_missing(conn, 'printers', 'last_seen', "DATETIME")
+            self._add_column_if_missing(conn, 'printers', 'is_virtual', "BOOLEAN DEFAULT 0")
+            self._add_column_if_missing(conn, 'printers', 'virtual_status', "TEXT DEFAULT 'idle'")
 
             self._add_column_if_missing(conn, 'projects', 'color', "TEXT DEFAULT '#888888'")
 
@@ -146,6 +150,23 @@ class DBModel:
         finally:
             session.close()
 
+    def add_virtual_printer(self, name: str, status: str = "idle") -> Printer:
+        session = self.get_session()
+        try:
+            printer = Printer(
+                name=name,
+                is_virtual=True,
+                virtual_status=status or "idle",
+                is_active=True,
+                last_seen=datetime.now(timezone.utc),
+            )
+            session.add(printer)
+            session.commit()
+            session.refresh(printer)
+            return printer
+        finally:
+            session.close()
+
     def upsert_printer(
         self,
         name: Optional[str],
@@ -154,6 +175,7 @@ class DBModel:
         moonraker_printer: Optional[str] = None,
         last_service: Optional[str] = None,
         is_active: bool = True,
+        **kwargs,
     ) -> Printer:
         session = self.get_session()
         try:
@@ -172,6 +194,10 @@ class DBModel:
                 if last_service:
                     printer.last_service = last_service
                 printer.is_active = is_active
+                if 'is_virtual' in kwargs:
+                    printer.is_virtual = kwargs.get('is_virtual', False)
+                if 'virtual_status' in kwargs and kwargs.get('virtual_status'):
+                    printer.virtual_status = kwargs.get('virtual_status')
             else:
                 printer = Printer(
                     name=name or f"Printer@{moonraker_host}",
@@ -180,6 +206,8 @@ class DBModel:
                     moonraker_printer=moonraker_printer,
                     last_service=last_service,
                     is_active=is_active,
+                    is_virtual=kwargs.get('is_virtual', False),
+                    virtual_status=kwargs.get('virtual_status') or "idle",
                 )
                 session.add(printer)
 
@@ -219,6 +247,18 @@ class DBModel:
             if not include_inactive:
                 query = query.filter(Printer.is_active.is_(True))
             return query.all()
+        finally:
+            session.close()
+
+    def delete_printer(self, printer_id: int) -> bool:
+        session = self.get_session()
+        try:
+            printer = session.query(Printer).get(printer_id)
+            if not printer:
+                return False
+            session.delete(printer)
+            session.commit()
+            return True
         finally:
             session.close()
 

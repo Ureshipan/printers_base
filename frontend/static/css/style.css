@@ -67,6 +67,41 @@ body {
 }
 
 h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.primary-btn, .secondary-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+.primary-btn {
+  background: linear-gradient(90deg, #4c4bff, #7d5bff);
+  color: #fff;
+  box-shadow: 0 6px 20px #4c4bff55;
+}
+.primary-btn:hover { filter: brightness(1.05); }
+.secondary-btn {
+  background: #1a1a2d;
+  color: #cdd0ff;
+  border: 1px solid #2f2f4d;
+}
+.secondary-btn:hover { background: #22223a; }
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: #cdd0ff;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 6px;
+  line-height: 1;
+}
 
 .printers-grid {
   display: grid;
@@ -194,3 +229,65 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
   border-bottom: none;
 }
 .queue-block th:last-child, .queue-block td:last-child { text-align: right; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 10, 26, 0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: #1a1a2d;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 20px 60px #0b0b1f99;
+  border: 1px solid #2b2c4d;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid #27294a;
+}
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.modal-body {
+  padding: 16px 18px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+.modal-field input {
+  background: #141426;
+  border: 1px solid #2b2c4d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #fff;
+  font-size: 14px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+.modal-error {
+  min-height: 18px;
+  color: #ff7b9c;
+  font-size: 13px;
+}
