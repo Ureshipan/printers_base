@@ -29,9 +29,6 @@ body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #23233
 .sidebar .sidebar-btn[data-route="/"] { order: 1; }
 .sidebar .sidebar-btn[data-route="/printer-control"] { order: 2; }
 .sidebar .sidebar-btn[data-route="/planning"] { order: 3; }
-.sidebar-bottom { order: 99; width: 100%; }
-.sidebar-bottom { margin-top: auto; padding: 25px 0; width: 100%; }
-.sidebar-link { color: #adadc5; margin: 6px 14px; font-size: 16px; cursor: pointer; text-align: left; opacity: 0.8; }
 .dashboard { margin-left: 220px; padding: 14px 18px; min-height: 100vh; }
 
 /* Color themes for different printer states - only button colors */
