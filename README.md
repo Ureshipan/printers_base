@@ -8,7 +8,7 @@ python -m venv .venv && source .venv/bin/activate  # опционально
 pip install -r requirements.txt
 
 # Запуск веб-интерфейса
-python backend/api/web_interface.py
+python -m backend.api.web_interface
 # или через стартовые скрипты:
 #   ./start_tools.sh
 #   start_tools.bat
