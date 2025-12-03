@@ -15,12 +15,16 @@ from flask import (
     url_for,
 )
 from werkzeug.utils import secure_filename
+from dotenv import load_dotenv
 
 # Add the project root to the Python path
 PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 sys.path.append(PROJECT_ROOT)
+
+if os.path.exists(os.path.join(PROJECT_ROOT, ".env")):
+    load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 from backend.db.data_model import DBModel, Coil, Printer, Project, Task  # noqa: E402
 
@@ -36,7 +40,7 @@ app = Flask(
 # ---------------------------------------------------------------------------
 DEFAULT_PRINTER_PORT = int(os.environ.get("MOONRAKER_PORT", "7125"))
 DEFAULT_FALLBACK_HOST = os.environ.get("MOONRAKER_DEFAULT_HOST", "172.22.112.68")
-DISCOVERY_ENABLED = os.environ.get("PRINTER_DISCOVERY_ENABLED", "0") == "1"
+DISCOVERY_ENABLED = os.environ.get("PRINTER_DISCOVERY_ENABLED", "1") == "1"
 DISCOVERY_INTERVAL_SECONDS = int(os.environ.get("PRINTER_DISCOVERY_INTERVAL", "60"))
 PRINTER_STATE_INTERVAL = float(os.environ.get("PRINTER_STATE_INTERVAL", "1.0"))
 ALLOWED_GCODE_EXTENSIONS = {"gcode", "gco", "gc", "g"}
