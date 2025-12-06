@@ -40,7 +40,7 @@ app = Flask(
 # ---------------------------------------------------------------------------
 DEFAULT_PRINTER_PORT = int(os.environ.get("MOONRAKER_PORT", "7125"))
 DEFAULT_FALLBACK_HOST = os.environ.get("MOONRAKER_DEFAULT_HOST", "172.22.112.68")
-DISCOVERY_ENABLED = os.environ.get("PRINTER_DISCOVERY_ENABLED", "1") == "1"
+DISCOVERY_ENABLED = os.environ.get("PRINTER_DISCOVERY_ENABLED", "0") == "1"
 DISCOVERY_INTERVAL_SECONDS = int(os.environ.get("PRINTER_DISCOVERY_INTERVAL", "60"))
 PRINTER_STATE_INTERVAL = float(os.environ.get("PRINTER_STATE_INTERVAL", "1.0"))
 ALLOWED_GCODE_EXTENSIONS = {"gcode", "gco", "gc", "g"}
@@ -293,15 +293,26 @@ def fetch_printer_state(printer: Printer) -> Dict:
 
     state = build_default_state()
     base_url = build_base_url(printer)
-    params = enrich_params_with_printer(printer, [
-        ('print_stats', ''),
-        ('extruder', ''),
-        ('heater_bed', ''),
-        ('toolhead', ''),
-        ('virtual_sdcard', ''),
-    ])
+    # Используем POST с JSON-телом согласно документации Moonraker API
+    query_payload = {
+        "objects": {
+            "webhooks": None,
+            "print_stats": None,
+            "extruder": None,
+            "heater_bed": None,
+            "toolhead": None,
+            "virtual_sdcard": None,
+        }
+    }
+    params = enrich_params_with_printer(printer, [])
     try:
-        response = http.get(f"{base_url}/printer/objects/query", params=params, timeout=5)
+        # Короткий timeout чтобы офлайн принтеры не блокировали обновление других
+        response = http.post(
+            f"{base_url}/printer/objects/query",
+            params=params,
+            json=query_payload,
+            timeout=2
+        )
         response.raise_for_status()
         payload = response.json().get("result", {}).get("status", {})
     except requests.RequestException as exc:
@@ -310,13 +321,22 @@ def fetch_printer_state(printer: Printer) -> Dict:
         return state
 
     try:
+        webhooks = payload.get("webhooks", {})
         print_stats = payload.get("print_stats", {})
         extruder = payload.get("extruder", {})
         heater_bed = payload.get("heater_bed", {})
         toolhead = payload.get("toolhead", {})
         virtual_sdcard = payload.get("virtual_sdcard", {})
 
-        state["status"] = print_stats.get("state", "unknown")
+        # Проверяем состояние Klipper через webhooks
+        klipper_state = webhooks.get("state", "unknown")
+        if klipper_state != "ready":
+            # Klipper не готов (startup, shutdown, error)
+            state["status"] = "offline" if klipper_state == "shutdown" else "error"
+            state["status_message"] = webhooks.get("state_message", "")
+            return state
+
+        state["status"] = print_stats.get("state", "standby")
         state["temperature"]["extruder"] = extruder.get("temperature", 0.0)
         state["temperature"]["bed"] = heater_bed.get("temperature", 0.0)
         state["target_temperature"]["extruder"] = extruder.get("target", 0.0)
@@ -573,7 +593,8 @@ def api_send_command():
     if not printer:
         return jsonify({"success": False, "message": "Нет доступных принтеров"}), 404
     try:
-        response = moonraker_post(printer, "printer/gcode/script", {"script": command})
+        # Увеличенный таймаут для G-code команд (G28 может занимать 10-15 сек)
+        response = moonraker_post(printer, "printer/gcode/script", {"script": command}, timeout=30)
         if response is None:
             raise RuntimeError("Moonraker не ответил")
         return jsonify({"success": True, "message": "Команда отправлена"})
@@ -591,7 +612,8 @@ def api_home_axis():
         return jsonify({"success": False, "message": "Нет доступных принтеров"}), 404
     command = f"G28 {axis.upper()}" if axis != 'all' else "G28"
     try:
-        response = moonraker_post(printer, "printer/gcode/script", {"script": command})
+        # Увеличенный таймаут для home команд (до 30 сек)
+        response = moonraker_post(printer, "printer/gcode/script", {"script": command}, timeout=30)
         if response is None:
             raise RuntimeError("Moonraker не ответил")
         return jsonify({"success": True, "message": "Команда отправлена"})
@@ -875,6 +897,12 @@ def start_background_threads():
         return
     app.config["BACKGROUND_THREADS_STARTED"] = True
     synchronize_printers_with_db()
+    # Начальная синхронизация состояний чтобы кэш был заполнен сразу
+    active_printers = db.get_printers(include_inactive=False)
+    for printer in active_printers:
+        state = fetch_printer_state(printer)
+        with printer_state_lock:
+            printer_states[printer.id] = state
     update_thread = threading.Thread(target=update_printer_states_loop, daemon=True)
     update_thread.start()
 

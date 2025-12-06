@@ -123,7 +123,20 @@ async function loadPrinters(dropdown, titleEl, statusEl, body) {
     dropdown.appendChild(item);
   });
 
-  // Автовыбор первого принтера
+  // Проверяем URL параметр printer_id
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedPrinterId = urlParams.get('printer_id');
+
+  if (requestedPrinterId) {
+    const printerId = parseInt(requestedPrinterId, 10);
+    const printerExists = printersCache.some(p => p.id === printerId);
+    if (printerExists) {
+      selectPrinter(printerId, titleEl, statusEl, body, dropdown);
+      return;
+    }
+  }
+
+  // Если нет параметра или принтер не найден - выбираем первый
   selectPrinter(printersCache[0].id, titleEl, statusEl, body, dropdown);
 }
 
@@ -298,6 +311,7 @@ function sendCustomGcode() {
   const input = document.getElementById('gcodeInput');
   const gcode = input.value.trim();
   if (gcode) {
+    addConsoleMessage(`> ${gcode}`);
     sendCommand('command', { command: gcode });
     input.value = '';
   }

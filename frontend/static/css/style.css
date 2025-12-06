@@ -171,6 +171,47 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
 .status-idle { color: #ffc400; }
 .status-error { color: #ff4488; }
 .status-service { color: #e162e7; }
+.status-offline { color: #888899; }
+
+/* Стили для offline карточки принтера */
+.printer-card.offline {
+  background: #15151f;
+  opacity: 0.7;
+  border: 1px dashed #3a3a50;
+  padding-top: 32px; /* Отступ для бейджа */
+}
+.printer-card.offline:hover {
+  transform: none;
+  background: #18182a;
+  box-shadow: 0 2px 8px #11112366;
+}
+.printer-card.offline:hover::before {
+  display: none;
+}
+.printer-card.offline .printer-header,
+.printer-card.offline .printer-prop {
+  color: #666680;
+}
+.printer-card.offline .printer-icon {
+  filter: grayscale(100%);
+  opacity: 0.5;
+}
+
+/* Бейдж "Нет связи" для offline принтера */
+.offline-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(90deg, #ff4466, #cc3355);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px 0;
+  letter-spacing: 1px;
+  border-radius: 17px 17px 0 0;
+}
 .progress-bar {
   margin-top: 8px;
   height: 8px;
@@ -186,6 +227,7 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
 .progress-idle { background: #ffc400; }
 .progress-error { background: #fa3280; }
 .progress-service { background: #e162e7; }
+.progress-offline { background: #555566; }
 
 .status-block { margin-bottom: 18px; }
 .status-bar {
@@ -204,6 +246,7 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
 .bar-idle { background: #ffc400; }
 .bar-error { background: #fa3280; }
 .bar-service { background: #e162e7; }
+.bar-offline { background: #555566; }
 
 .materials-block table, .queue-block table {
   width: 100%;

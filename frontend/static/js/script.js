@@ -46,34 +46,42 @@ function renderPrinters(printers) {
   }
   
   printers.forEach(p => {
+    const isOffline = p.status === 'offline';
+
     let statusClass = '';
     if (p.status === 'work') statusClass = 'status-work';
     else if (p.status === 'idle') statusClass = 'status-idle';
     else if (p.status === 'error') statusClass = 'status-error';
     else if (p.status === 'service') statusClass = 'status-service';
+    else if (p.status === 'offline') statusClass = 'status-offline';
 
     let progClass = '';
     if (p.status === 'work') progClass = 'progress-work';
     else if (p.status === 'idle') progClass = 'progress-idle';
     else if (p.status === 'error') progClass = 'progress-error';
     else if (p.status === 'service') progClass = 'progress-service';
+    else if (p.status === 'offline') progClass = 'progress-offline';
+
+    const statusText =
+      p.status === 'work' ? 'В работе' :
+      p.status === 'idle' ? 'Простаивает' :
+      p.status === 'error' ? 'Ошибка' :
+      p.status === 'offline' ? 'Нет связи' :
+      'Тех. осмотр';
+
+    const cardClass = isOffline ? 'printer-card offline' : 'printer-card';
+    const offlineBadge = isOffline ? '<span class="offline-badge">⚠ НЕТ СВЯЗИ</span>' : '';
 
     printersGrid.innerHTML += `
-      <div class="printer-card" onclick="selectPrinter(${p.id})">
+      <div class="${cardClass}" onclick="selectPrinter(${p.id})">
+        ${offlineBadge}
         <div class="printer-header">
           <span class="printer-icon">🖨️</span>
           <span>${p.name}</span>
         </div>
         <div class="printer-prop">Материал - ${p.material}</div>
-        <div class="printer-prop">Текущая модель - ${p.model}</div>
-        <div class="printer-prop printer-status ${statusClass}">
-          ${
-            p.status === 'work' ? 'В работе' :
-            p.status === 'idle' ? 'Простаивает' :
-            p.status === 'error' ? 'Ошибка' :
-            'Тех. осмотр'
-          }
-        </div>
+        <div class="printer-prop">Текущая модель - ${isOffline ? '—' : p.model}</div>
+        <div class="printer-prop printer-status ${statusClass}">${statusText}</div>
         <div class="progress-bar"><div class="progress-inner ${progClass}" style="width:${p.percent}%"></div></div>
         <div class="printer-prop">Обслужен: ${p.lastServed}</div>
       </div>
@@ -89,11 +97,13 @@ function updatePrinterStats(printers) {
   const statIdle = document.getElementById('statIdle');
   const statError = document.getElementById('statError');
   const statService = document.getElementById('statService');
+  const statOffline = document.getElementById('statOffline');
 
-  const stats = { work: 0, idle: 0, error: 0, service: 0 };
+  const stats = { work: 0, idle: 0, error: 0, service: 0, offline: 0 };
   printers.forEach(p => {
     if (p.status === 'work') stats.work += 1;
-    else if (p.status === 'error' || p.status === 'offline') stats.error += 1;
+    else if (p.status === 'offline') stats.offline += 1;
+    else if (p.status === 'error') stats.error += 1;
     else if (p.status === 'service') stats.service += 1;
     else stats.idle += 1;
   });
@@ -103,6 +113,7 @@ function updatePrinterStats(printers) {
   if (statIdle) statIdle.textContent = stats.idle;
   if (statError) statError.textContent = stats.error;
   if (statService) statService.textContent = stats.service;
+  if (statOffline) statOffline.textContent = stats.offline;
 }
 
 function renderMaterials(coils) {
@@ -163,8 +174,8 @@ function renderQueue(tasks) {
 
 // Функция для выбора принтера
 function selectPrinter(printerId) {
-  // Перенаправляем на страницу управления принтером
-  window.location.href = '/printer-control';
+  // Перенаправляем на страницу управления принтером с ID принтера
+  window.location.href = `/printer-control?printer_id=${printerId}`;
 }
 
 function openAddPrinterModal(modal, ipInput, errorBox, portInput) {
