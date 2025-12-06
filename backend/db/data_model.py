@@ -262,6 +262,22 @@ class DBModel:
         finally:
             session.close()
 
+    def update_printer(self, printer_id: int, **kwargs) -> Optional[Printer]:
+        """Обновление принтера по ID."""
+        session = self.get_session()
+        try:
+            printer = session.query(Printer).get(printer_id)
+            if not printer:
+                return None
+            data = self._filter_model_kwargs(Printer, kwargs)
+            for key, value in data.items():
+                setattr(printer, key, value)
+            session.commit()
+            session.refresh(printer)
+            return printer
+        finally:
+            session.close()
+
     # Material / coil / project helpers
     def add_material(self, name, nozzle_tmp, table_tmp):
         session = self.get_session()

@@ -125,6 +125,66 @@
     </div>
   </div>
 
+  <!-- Модальное окно редактирования принтера -->
+  <div class="modal-overlay" id="editPrinterModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Редактировать принтер</h3>
+        <button class="icon-btn" id="closeEditPrinterBtn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="editPrinterForm" class="modal-body">
+        <input type="hidden" id="editPrinterId">
+        <label class="modal-field">
+          <span>Название</span>
+          <input type="text" id="editPrinterName" placeholder="Название принтера" required>
+        </label>
+        <label class="modal-field" id="editPrinterHostField">
+          <span>IP адрес</span>
+          <input type="text" id="editPrinterHost" placeholder="192.168.0.50">
+        </label>
+        <label class="modal-field" id="editPrinterPortField">
+          <span>Порт</span>
+          <input type="number" id="editPrinterPort" value="7125" min="1" max="65535">
+        </label>
+        <label class="modal-field" id="editPrinterStatusField" style="display:none;">
+          <span>Статус</span>
+          <select id="editPrinterStatus">
+            <option value="idle">Простаивает</option>
+            <option value="work">В работе</option>
+            <option value="error">Ошибка</option>
+            <option value="service">Тех. осмотр</option>
+            <option value="offline">Офлайн</option>
+          </select>
+        </label>
+        <div class="modal-error" id="editPrinterError" role="alert"></div>
+        <div class="modal-actions">
+          <button type="button" class="danger-btn" id="deletePrinterBtn">Удалить</button>
+          <button type="button" class="secondary-btn" id="cancelEditPrinterBtn">Отмена</button>
+          <button type="submit" class="primary-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно подтверждения удаления -->
+  <div class="modal-overlay" id="confirmDeleteModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Подтвердите удаление</h3>
+        <button class="icon-btn" id="closeConfirmDeleteBtn" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Вы уверены, что хотите удалить принтер <strong id="deletePrinterName"></strong>?</p>
+        <p style="color: #ff6b6b; font-size: 0.9em;">Это действие нельзя отменить.</p>
+        <div class="modal-error" id="deleteError" role="alert"></div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelDeleteBtn">Отмена</button>
+          <button type="button" class="danger-btn" id="confirmDeleteBtn">Удалить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="../static/js/script.js"></script>
 </body>
 </html>

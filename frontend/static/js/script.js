@@ -35,8 +35,12 @@ async function fetchTasks() {
   return [];
 }
 
+// Глобальный кэш принтеров для редактирования
+let printersDataCache = [];
+
 // Функция для рендеринга карточек принтеров
 function renderPrinters(printers) {
+  printersDataCache = printers; // Сохраняем для редактирования
   const printersGrid = document.getElementById('printersGrid');
   printersGrid.innerHTML = '';
   if (!printers.length) {
@@ -44,7 +48,7 @@ function renderPrinters(printers) {
     updatePrinterStats([]);
     return;
   }
-  
+
   printers.forEach(p => {
     const isOffline = p.status === 'offline';
 
@@ -73,17 +77,20 @@ function renderPrinters(printers) {
     const offlineBadge = isOffline ? '<span class="offline-badge">⚠ НЕТ СВЯЗИ</span>' : '';
 
     printersGrid.innerHTML += `
-      <div class="${cardClass}" onclick="selectPrinter(${p.id})">
+      <div class="${cardClass}">
         ${offlineBadge}
-        <div class="printer-header">
-          <span class="printer-icon">🖨️</span>
-          <span>${p.name}</span>
+        <button class="edit-printer-btn" onclick="event.stopPropagation(); openEditPrinterModal(${p.id})" title="Редактировать">✎</button>
+        <div class="printer-card-content" onclick="selectPrinter(${p.id})">
+          <div class="printer-header">
+            <span class="printer-icon">🖨️</span>
+            <span>${p.name}</span>
+          </div>
+          <div class="printer-prop">Материал - ${p.material}</div>
+          <div class="printer-prop">Текущая модель - ${isOffline ? '—' : p.model}</div>
+          <div class="printer-prop printer-status ${statusClass}">${statusText}</div>
+          <div class="progress-bar"><div class="progress-inner ${progClass}" style="width:${p.percent}%"></div></div>
+          <div class="printer-prop">Обслужен: ${p.lastServed}</div>
         </div>
-        <div class="printer-prop">Материал - ${p.material}</div>
-        <div class="printer-prop">Текущая модель - ${isOffline ? '—' : p.model}</div>
-        <div class="printer-prop printer-status ${statusClass}">${statusText}</div>
-        <div class="progress-bar"><div class="progress-inner ${progClass}" style="width:${p.percent}%"></div></div>
-        <div class="printer-prop">Обслужен: ${p.lastServed}</div>
       </div>
     `;
   });
@@ -356,4 +363,197 @@ document.addEventListener('DOMContentLoaded', async function() {
       submitAddVirtual(addVirtualForm, addVirtualError, virtualNameInput, virtualStatusInput);
     });
   }
+
+  // Обработчики для редактирования принтера
+  const editPrinterModal = document.getElementById('editPrinterModal');
+  const closeEditPrinterBtn = document.getElementById('closeEditPrinterBtn');
+  const cancelEditPrinterBtn = document.getElementById('cancelEditPrinterBtn');
+  const editPrinterForm = document.getElementById('editPrinterForm');
+  const deletePrinterBtn = document.getElementById('deletePrinterBtn');
+
+  [closeEditPrinterBtn, cancelEditPrinterBtn].forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', closeEditPrinterModal);
+    }
+  });
+
+  if (editPrinterForm) {
+    editPrinterForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitEditPrinter();
+    });
+  }
+
+  if (deletePrinterBtn) {
+    deletePrinterBtn.addEventListener('click', () => {
+      closeEditPrinterModal();
+      openConfirmDeleteModal();
+    });
+  }
+
+  // Обработчики для подтверждения удаления
+  const confirmDeleteModal = document.getElementById('confirmDeleteModal');
+  const closeConfirmDeleteBtn = document.getElementById('closeConfirmDeleteBtn');
+  const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+  const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+
+  [closeConfirmDeleteBtn, cancelDeleteBtn].forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', closeConfirmDeleteModal);
+    }
+  });
+
+  if (confirmDeleteBtn) {
+    confirmDeleteBtn.addEventListener('click', confirmDeletePrinter);
+  }
 });
+
+// Переменная для хранения данных редактируемого принтера
+let currentEditPrinter = null;
+
+// Открытие модалки редактирования
+function openEditPrinterModal(printerId) {
+  const printer = printersDataCache.find(p => p.id === printerId);
+  if (!printer) return;
+
+  currentEditPrinter = printer;
+
+  document.getElementById('editPrinterId').value = printer.id;
+  document.getElementById('editPrinterName').value = printer.name || '';
+  document.getElementById('editPrinterError').textContent = '';
+
+  // Для виртуальных принтеров показываем статус, скрываем IP/порт
+  const hostField = document.getElementById('editPrinterHostField');
+  const portField = document.getElementById('editPrinterPortField');
+  const statusField = document.getElementById('editPrinterStatusField');
+
+  if (printer.is_virtual) {
+    hostField.style.display = 'none';
+    portField.style.display = 'none';
+    statusField.style.display = 'block';
+    document.getElementById('editPrinterStatus').value = printer.status || 'idle';
+  } else {
+    hostField.style.display = 'block';
+    portField.style.display = 'block';
+    statusField.style.display = 'none';
+    // Для реальных принтеров нужно получить данные из API
+    fetchPrinterDetails(printerId);
+  }
+
+  document.getElementById('editPrinterModal').classList.add('open');
+}
+
+// Получение детальной информации о принтере
+async function fetchPrinterDetails(printerId) {
+  try {
+    const response = await fetch(`/api/printers/${printerId}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.printer) {
+        document.getElementById('editPrinterHost').value = data.printer.host || '';
+        document.getElementById('editPrinterPort').value = data.printer.port || 7125;
+      }
+    }
+  } catch (error) {
+    console.error('Ошибка получения данных принтера:', error);
+  }
+}
+
+// Закрытие модалки редактирования
+function closeEditPrinterModal() {
+  document.getElementById('editPrinterModal').classList.remove('open');
+  document.getElementById('editPrinterForm').reset();
+  document.getElementById('editPrinterError').textContent = '';
+  currentEditPrinter = null;
+}
+
+// Отправка изменений
+async function submitEditPrinter() {
+  const errorBox = document.getElementById('editPrinterError');
+  errorBox.textContent = '';
+
+  const printerId = document.getElementById('editPrinterId').value;
+  const name = document.getElementById('editPrinterName').value.trim();
+
+  if (!name) {
+    errorBox.textContent = 'Введите название принтера';
+    return;
+  }
+
+  const payload = { name };
+
+  if (currentEditPrinter && currentEditPrinter.is_virtual) {
+    payload.status = document.getElementById('editPrinterStatus').value;
+  } else {
+    const host = document.getElementById('editPrinterHost').value.trim();
+    const port = parseInt(document.getElementById('editPrinterPort').value, 10) || 7125;
+    if (host) {
+      payload.host = host;
+      payload.port = port;
+    }
+  }
+
+  try {
+    const response = await fetch(`/api/printers/${printerId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      errorBox.textContent = data.message || 'Не удалось обновить принтер';
+      return;
+    }
+
+    closeEditPrinterModal();
+    const printers = await fetchPrinters();
+    renderPrinters(printers);
+  } catch (error) {
+    console.error('Ошибка при обновлении принтера:', error);
+    errorBox.textContent = 'Ошибка подключения к серверу';
+  }
+}
+
+// Открытие модалки подтверждения удаления
+function openConfirmDeleteModal() {
+  if (!currentEditPrinter) return;
+
+  document.getElementById('deletePrinterName').textContent = currentEditPrinter.name;
+  document.getElementById('deleteError').textContent = '';
+  document.getElementById('confirmDeleteModal').classList.add('open');
+}
+
+// Закрытие модалки подтверждения удаления
+function closeConfirmDeleteModal() {
+  document.getElementById('confirmDeleteModal').classList.remove('open');
+  document.getElementById('deleteError').textContent = '';
+}
+
+// Удаление принтера
+async function confirmDeletePrinter() {
+  if (!currentEditPrinter) return;
+
+  const errorBox = document.getElementById('deleteError');
+  errorBox.textContent = '';
+
+  try {
+    const response = await fetch(`/api/printers/${currentEditPrinter.id}`, {
+      method: 'DELETE'
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      errorBox.textContent = data.message || 'Не удалось удалить принтер';
+      return;
+    }
+
+    closeConfirmDeleteModal();
+    currentEditPrinter = null;
+    const printers = await fetchPrinters();
+    renderPrinters(printers);
+  } catch (error) {
+    console.error('Ошибка при удалении принтера:', error);
+    errorBox.textContent = 'Ошибка подключения к серверу';
+  }
+}

@@ -353,3 +353,65 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
   color: #ff7b9c;
   font-size: 13px;
 }
+
+/* Кнопка удаления (красная) */
+.danger-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s ease;
+  background: linear-gradient(90deg, #ff4466, #cc3355);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(255, 68, 102, 0.3);
+}
+.danger-btn:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 4px 20px rgba(255, 68, 102, 0.5);
+}
+
+/* Кнопка редактирования принтера */
+.edit-printer-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(76, 75, 255, 0.2);
+  color: #a5a4ff;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s ease;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.printer-card:hover .edit-printer-btn {
+  opacity: 1;
+}
+.edit-printer-btn:hover {
+  background: rgba(76, 75, 255, 0.4);
+  color: #fff;
+  transform: scale(1.1);
+}
+.printer-card.offline .edit-printer-btn {
+  top: 32px;
+}
+
+/* Обёртка содержимого карточки */
+.printer-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+
+/* Стили для модалки в modal-actions с кнопкой удаления */
+.modal-actions .danger-btn {
+  margin-right: auto;
+}

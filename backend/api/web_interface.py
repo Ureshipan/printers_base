@@ -561,14 +561,81 @@ def api_add_virtual_printer():
     })
 
 
-@app.route('/api/printers/<int:printer_id>', methods=['DELETE'])
-def api_delete_printer(printer_id: int):
+@app.route('/api/printers/<int:printer_id>', methods=['GET', 'PUT', 'DELETE'])
+def api_printer_detail(printer_id: int):
+    printer = db.get_printer_by_id(printer_id)
+    if not printer:
+        return jsonify({"success": False, "message": "Принтер не найден"}), 404
+
+    if request.method == 'GET':
+        return jsonify({
+            "success": True,
+            "printer": {
+                "id": printer.id,
+                "name": printer.name,
+                "host": printer.moonraker_host,
+                "port": printer.moonraker_port or DEFAULT_PRINTER_PORT,
+                "moonraker_printer": printer.moonraker_printer,
+                "is_virtual": getattr(printer, "is_virtual", False),
+                "status": getattr(printer, "virtual_status", None),
+            }
+        })
+
+    if request.method == 'PUT':
+        data = request.get_json(force=True, silent=True) or {}
+        updates = {}
+
+        if 'name' in data:
+            name = (data.get('name') or '').strip()
+            if not name:
+                return jsonify({"success": False, "message": "Название принтера обязательно"}), 400
+            updates['name'] = name
+
+        # Для виртуальных принтеров можно менять статус
+        if getattr(printer, "is_virtual", False) and 'status' in data:
+            status = (data.get('status') or '').strip().lower()
+            if status and status in ALLOWED_VIRTUAL_STATUSES:
+                updates['virtual_status'] = status
+                # Обновляем кэш состояния
+                with printer_state_lock:
+                    if printer_id in printer_states:
+                        printer_states[printer_id]['status'] = status
+
+        # Для реальных принтеров можно менять host/port
+        if not getattr(printer, "is_virtual", False):
+            if 'host' in data:
+                updates['moonraker_host'] = (data.get('host') or '').strip()
+            if 'port' in data:
+                try:
+                    updates['moonraker_port'] = int(data.get('port'))
+                except (TypeError, ValueError):
+                    pass
+
+        if not updates:
+            return jsonify({"success": False, "message": "Нет данных для обновления"}), 400
+
+        updated_printer = db.update_printer(printer_id, **updates)
+        if not updated_printer:
+            return jsonify({"success": False, "message": "Не удалось обновить принтер"}), 500
+
+        return jsonify({
+            "success": True,
+            "printer": {
+                "id": updated_printer.id,
+                "name": updated_printer.name,
+                "host": updated_printer.moonraker_host,
+                "port": updated_printer.moonraker_port or DEFAULT_PRINTER_PORT,
+                "is_virtual": getattr(updated_printer, "is_virtual", False),
+            }
+        })
+
+    # DELETE
     deleted = db.delete_printer(printer_id)
     if deleted:
         with printer_state_lock:
             printer_states.pop(printer_id, None)
         return jsonify({"success": True})
-    return jsonify({"success": False, "message": "Принтер не найден"}), 404
+    return jsonify({"success": False, "message": "Не удалось удалить принтер"}), 500
 
 
 @app.route('/api/state')

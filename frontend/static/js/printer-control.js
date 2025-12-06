@@ -153,6 +153,15 @@ function selectPrinter(printerId, titleEl, statusEl, body, dropdown) {
   updatePrinterStatusText(statusEl, printer.status, printer.percent);
   body.className = '';
   body.classList.add(`theme-${printer.status || 'idle'}`);
+
+  // Очищаем консоль при смене принтера и показываем начальное сообщение
+  clearConsole();
+  addConsoleMessage(`> Выбран принтер: ${printer.name}`);
+
+  // Сбрасываем флаг первого обновления для нового принтера
+  isFirstUpdate = true;
+  lastKnownStatus = null;
+
   // Обновляем сразу состояние выбранного принтера
   updatePrinterState();
 }
@@ -189,6 +198,10 @@ function startRealTimeUpdates() {
   updateInterval = setInterval(updatePrinterState, 1000);
 }
 
+// Переменная для отслеживания первого обновления после выбора принтера
+let isFirstUpdate = true;
+let lastKnownStatus = null;
+
 // Функция для обновления состояния принтера
 async function updatePrinterState() {
   const statusEl = document.getElementById('printerStatus');
@@ -215,9 +228,49 @@ async function updatePrinterState() {
     document.getElementById('posZ').textContent = state.position.z.toFixed(1);
 
     updatePrinterStatusText(statusEl, state.status, state.progress);
+
+    // Показываем информацию о состоянии при первом обновлении или при изменении статуса
+    if (isFirstUpdate || lastKnownStatus !== state.status) {
+      showStatusInConsole(state);
+      lastKnownStatus = state.status;
+      isFirstUpdate = false;
+    }
   } catch (error) {
     console.error('Ошибка при обновлении состояния принтера:', error);
     updatePrinterStatusText(statusEl, 'error', 0);
+    if (isFirstUpdate) {
+      addConsoleMessage('> Не удалось получить данные принтера', 'error');
+      isFirstUpdate = false;
+    }
+  }
+}
+
+// Показать состояние принтера в консоли
+function showStatusInConsole(state) {
+  const statusTexts = {
+    'offline': 'Принтер офлайн',
+    'error': 'Ошибка принтера',
+    'printing': 'Идёт печать',
+    'work': 'Идёт печать',
+    'idle': 'Принтер готов к работе',
+    'standby': 'Принтер в режиме ожидания',
+    'paused': 'Печать приостановлена',
+    'complete': 'Печать завершена'
+  };
+
+  const statusText = statusTexts[state.status] || `Статус: ${state.status}`;
+
+  if (state.status === 'offline' || state.status === 'error') {
+    addConsoleMessage(`> ${statusText}`, 'warning');
+  } else {
+    addConsoleMessage(`> ${statusText}`);
+    // Показываем температуры только если принтер онлайн
+    if (state.temperature.extruder > 0 || state.target_temperature.extruder > 0) {
+      addConsoleMessage(`> Экструдер: ${Math.round(state.temperature.extruder)}°C / ${Math.round(state.target_temperature.extruder)}°C`);
+    }
+    if (state.temperature.bed > 0 || state.target_temperature.bed > 0) {
+      addConsoleMessage(`> Стол: ${Math.round(state.temperature.bed)}°C / ${Math.round(state.target_temperature.bed)}°C`);
+    }
   }
 }
 
@@ -326,11 +379,17 @@ function addConsoleMessage(message, type = 'normal') {
   const line = document.createElement('div');
   line.className = 'console-line';
   if (type === 'error') { line.style.color = '#ff6666'; }
+  else if (type === 'warning') { line.style.color = '#ffaa66'; }
   else if (message.startsWith('<')) { line.style.color = '#66ff66'; }
   else if (message.startsWith('>')) { line.style.color = '#6666ff'; }
   line.textContent = message;
   output.appendChild(line);
   output.scrollTop = output.scrollHeight;
+}
+
+function clearConsole() {
+  const output = document.getElementById('consoleOutput');
+  output.innerHTML = '';
 }
 
 // Обновление позиций теперь происходит через API, поэтому убираем симуляцию
