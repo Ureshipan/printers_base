@@ -73,12 +73,16 @@ function renderPrinters(printers) {
       p.status === 'offline' ? 'Нет связи' :
       'Тех. осмотр';
 
-    const cardClass = isOffline ? 'printer-card offline' : 'printer-card';
+    const needsMaintenance = p.needs_maintenance || false;
+    let cardClass = isOffline ? 'printer-card offline' : 'printer-card';
+    if (needsMaintenance && !isOffline) cardClass += ' needs-maintenance';
     const offlineBadge = isOffline ? '<span class="offline-badge">⚠ НЕТ СВЯЗИ</span>' : '';
+    const maintenanceBadge = (needsMaintenance && !isOffline) ? '<span class="maintenance-badge">🔧 ОБСЛУЖИВАНИЕ</span>' : '';
 
     printersGrid.innerHTML += `
       <div class="${cardClass}">
         ${offlineBadge}
+        ${maintenanceBadge}
         <button class="edit-printer-btn" onclick="event.stopPropagation(); openEditPrinterModal(${p.id})" title="Редактировать">✎</button>
         <div class="printer-card-content" onclick="selectPrinter(${p.id})">
           <div class="printer-header">
@@ -386,8 +390,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   if (deletePrinterBtn) {
     deletePrinterBtn.addEventListener('click', () => {
-      closeEditPrinterModal();
+      // Сначала открываем модалку подтверждения, потом закрываем редактирование
+      // (чтобы currentEditPrinter не был null)
       openConfirmDeleteModal();
+      document.getElementById('editPrinterModal').classList.remove('open');
     });
   }
 

@@ -29,6 +29,7 @@ body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #23233
 .sidebar .sidebar-btn[data-route="/"] { order: 1; }
 .sidebar .sidebar-btn[data-route="/printer-control"] { order: 2; }
 .sidebar .sidebar-btn[data-route="/planning"] { order: 3; }
+.sidebar .sidebar-btn[data-route="/maintenance"] { order: 4; }
 .dashboard { margin-left: 220px; padding: 14px 18px; min-height: 100vh; }
 
 /* Color themes for different printer states - only button colors */
@@ -104,6 +105,7 @@ body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #23233
 }
 .printer-status { font-size: 15px; font-weight: 600; padding: 6px 12px; border-radius: 8px; background: #1a1a2d; }
 .status-work { color: var(--status-color, #40a0ff); }
+.status-maintenance { color: #ff9800; background: linear-gradient(135deg, #3d2800, #2a1f00); }
 .top-blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 11px; }
 section { background: #1a1a2d; border-radius: 14px; padding: 14px 12px 11px 12px; box-shadow: 0 2px 8px #11112344; }
 h2 { margin: 0 0 7px 0; font-size: 17px; font-weight: 700; color: #e0e0f0; }
@@ -157,11 +159,13 @@ h2 { margin: 0 0 7px 0; font-size: 17px; font-weight: 700; color: #e0e0f0; }
   width: 100%;
   height: 100%;
   background-color: rgba(0, 0, 0, 0.7);
+  /* Flex центрирование для корректного отображения */
+  justify-content: center;
+  align-items: center;
 }
 
 .modal-content {
   background: #1a1a2d;
-  margin: 10% auto;
   padding: 0;
   border: 1px solid #404060;
   border-radius: 10px;

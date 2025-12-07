@@ -46,6 +46,7 @@ body {
 .sidebar .sidebar-btn[data-route="/"] { order: 1; }
 .sidebar .sidebar-btn[data-route="/printer-control"] { order: 2; }
 .sidebar .sidebar-btn[data-route="/planning"] { order: 3; }
+.sidebar .sidebar-btn[data-route="/maintenance"] { order: 4; }
 
 .dashboard {
   margin-left: 220px;
@@ -212,6 +213,28 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
   letter-spacing: 1px;
   border-radius: 17px 17px 0 0;
 }
+
+/* Бейдж "Требует обслуживания" */
+.maintenance-badge {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(90deg, #ff9800, #ff5722);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px 0;
+  letter-spacing: 1px;
+  border-radius: 0 0 17px 17px;
+  z-index: 2;
+}
+
+.printer-card.needs-maintenance {
+  border: 2px solid #ff9800;
+}
+
 .progress-bar {
   margin-top: 8px;
   height: 8px;

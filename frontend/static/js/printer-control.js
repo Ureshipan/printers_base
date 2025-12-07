@@ -154,6 +154,17 @@ function selectPrinter(printerId, titleEl, statusEl, body, dropdown) {
   body.className = '';
   body.classList.add(`theme-${printer.status || 'idle'}`);
 
+  // Проверка необходимости обслуживания
+  if (printer.needs_maintenance) {
+    const maintenanceModal = document.getElementById('maintenanceModal');
+    if (maintenanceModal) {
+      maintenanceModal.style.display = 'flex';
+    }
+    // Обновляем статус на "Требуется обслуживание"
+    statusEl.textContent = 'Требуется обслуживание';
+    statusEl.className = 'printer-status status-maintenance';
+  }
+
   // Очищаем консоль при смене принтера и показываем начальное сообщение
   clearConsole();
   addConsoleMessage(`> Выбран принтер: ${printer.name}`);
@@ -228,6 +239,13 @@ async function updatePrinterState() {
     document.getElementById('posZ').textContent = state.position.z.toFixed(1);
 
     updatePrinterStatusText(statusEl, state.status, state.progress);
+
+    // Проверяем необходимость обслуживания из кеша принтеров
+    const printer = printersCache.find(p => p.id === selectedPrinterId);
+    if (printer && printer.needs_maintenance) {
+      statusEl.textContent = 'Требуется обслуживание';
+      statusEl.className = 'printer-status status-maintenance';
+    }
 
     // Показываем информацию о состоянии при первом обновлении или при изменении статуса
     if (isFirstUpdate || lastKnownStatus !== state.status) {

@@ -33,8 +33,10 @@ class Printer(Base):
     last_seen = Column(DateTime)
     is_virtual = Column(Boolean, default=False)
     virtual_status = Column(String, default="idle")
+    print_hours = Column(Float, default=0.0)  # Общее время печати в часах
 
     tasks = relationship('Task', back_populates='printer')
+    maintenance_records = relationship('MaintenanceRecord', back_populates='printer', cascade='all, delete-orphan')
 
 
 class Material(Base):
@@ -92,6 +94,41 @@ class Task(Base):
     project = relationship('Project', back_populates='tasks')
 
 
+class MaintenanceType(Base):
+    """Типы технического обслуживания."""
+    __tablename__ = 'maintenance_types'
+    id = Column(Integer, primary_key=True)
+    code = Column(String, unique=True, nullable=False)  # 'nozzle', 'rollers', 'extruder'
+    name = Column(String, nullable=False)  # Человекочитаемое название
+    interval_hours = Column(Float, nullable=False)  # Интервал в часах печати
+    description = Column(Text)  # Описание обслуживания
+
+    records = relationship('MaintenanceRecord', back_populates='maintenance_type')
+
+
+class MaintenanceRecord(Base):
+    """Записи о выполненном техническом обслуживании."""
+    __tablename__ = 'maintenance_records'
+    id = Column(Integer, primary_key=True)
+    printer_id = Column(Integer, ForeignKey('printers.id'), nullable=False)
+    maintenance_type_id = Column(Integer, ForeignKey('maintenance_types.id'), nullable=False)
+    performed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # Когда выполнено
+    print_hours_at = Column(Float, default=0.0)  # Часы печати в момент обслуживания
+    notes = Column(Text)  # Комментарий пользователя
+    is_forced = Column(Boolean, default=False)  # Принудительное обслуживание
+
+    printer = relationship('Printer', back_populates='maintenance_records')
+    maintenance_type = relationship('MaintenanceType', back_populates='records')
+
+
+# Предустановленные типы обслуживания
+DEFAULT_MAINTENANCE_TYPES = [
+    {'code': 'nozzle', 'name': 'Замена сопел', 'interval_hours': 200.0, 'description': 'Замена сопла экструдера'},
+    {'code': 'rollers', 'name': 'Замена роликов', 'interval_hours': 500.0, 'description': 'Замена роликов подачи филамента'},
+    {'code': 'extruder', 'name': 'Обслуживание экструдера', 'interval_hours': 300.0, 'description': 'Чистка и смазка экструдера'},
+]
+
+
 class DBModel:
     def __init__(self, db_path: str = 'database.db'):
         self.db_path = db_path
@@ -117,6 +154,7 @@ class DBModel:
             self._add_column_if_missing(conn, 'printers', 'last_seen', "DATETIME")
             self._add_column_if_missing(conn, 'printers', 'is_virtual', "BOOLEAN DEFAULT 0")
             self._add_column_if_missing(conn, 'printers', 'virtual_status', "TEXT DEFAULT 'idle'")
+            self._add_column_if_missing(conn, 'printers', 'print_hours', "FLOAT DEFAULT 0.0")
 
             self._add_column_if_missing(conn, 'projects', 'color', "TEXT DEFAULT '#888888'")
 
@@ -453,3 +491,213 @@ class DBModel:
     def _filter_model_kwargs(model_cls, data: Dict[str, Any]) -> Dict[str, Any]:
         valid_keys = {column.name for column in model_cls.__table__.columns}
         return {key: value for key, value in data.items() if key in valid_keys}
+
+    # === Maintenance helpers ===
+
+    def init_maintenance_types(self):
+        """Инициализация типов обслуживания при первом запуске."""
+        session = self.get_session()
+        try:
+            existing = session.query(MaintenanceType).count()
+            if existing == 0:
+                for mt_data in DEFAULT_MAINTENANCE_TYPES:
+                    mt = MaintenanceType(**mt_data)
+                    session.add(mt)
+                session.commit()
+        finally:
+            session.close()
+
+    def get_maintenance_types(self):
+        """Получить все типы обслуживания."""
+        session = self.get_session()
+        try:
+            return session.query(MaintenanceType).all()
+        finally:
+            session.close()
+
+    def update_maintenance_type(self, type_id: int, **kwargs) -> Optional[MaintenanceType]:
+        """Обновить интервал или описание типа обслуживания."""
+        session = self.get_session()
+        try:
+            mt = session.query(MaintenanceType).get(type_id)
+            if not mt:
+                return None
+            for key, value in kwargs.items():
+                if hasattr(mt, key):
+                    setattr(mt, key, value)
+            session.commit()
+            session.refresh(mt)
+            return mt
+        finally:
+            session.close()
+
+    def add_maintenance_record(self, printer_id: int, maintenance_type_id: int,
+                                notes: Optional[str] = None, is_forced: bool = False) -> MaintenanceRecord:
+        """Добавить запись о выполненном обслуживании."""
+        session = self.get_session()
+        try:
+            printer = session.query(Printer).get(printer_id)
+            if not printer:
+                raise ValueError(f"Принтер {printer_id} не найден")
+
+            record = MaintenanceRecord(
+                printer_id=printer_id,
+                maintenance_type_id=maintenance_type_id,
+                performed_at=datetime.now(timezone.utc),
+                print_hours_at=printer.print_hours or 0.0,
+                notes=notes,
+                is_forced=is_forced,
+            )
+            session.add(record)
+            session.commit()
+            # Перезагружаем с joinedload для lazy-атрибутов
+            record = (
+                session.query(MaintenanceRecord)
+                .options(
+                    joinedload(MaintenanceRecord.printer),
+                    joinedload(MaintenanceRecord.maintenance_type),
+                )
+                .filter(MaintenanceRecord.id == record.id)
+                .one()
+            )
+            session.expunge(record)
+            return record
+        finally:
+            session.close()
+
+    def get_maintenance_records(self, printer_id: Optional[int] = None, limit: int = 100):
+        """Получить записи обслуживания с опциональным фильтром по принтеру."""
+        session = self.get_session()
+        try:
+            query = (
+                session.query(MaintenanceRecord)
+                .options(
+                    joinedload(MaintenanceRecord.printer),
+                    joinedload(MaintenanceRecord.maintenance_type),
+                )
+                .order_by(MaintenanceRecord.performed_at.desc())
+            )
+            if printer_id is not None:
+                query = query.filter(MaintenanceRecord.printer_id == printer_id)
+            return query.limit(limit).all()
+        finally:
+            session.close()
+
+    def delete_maintenance_record(self, record_id: int) -> bool:
+        """Удалить запись обслуживания."""
+        session = self.get_session()
+        try:
+            record = session.query(MaintenanceRecord).get(record_id)
+            if not record:
+                return False
+            session.delete(record)
+            session.commit()
+            return True
+        finally:
+            session.close()
+
+    def get_last_maintenance(self, printer_id: int, maintenance_type_id: int) -> Optional[MaintenanceRecord]:
+        """Получить последнюю запись обслуживания определённого типа для принтера."""
+        session = self.get_session()
+        try:
+            return (
+                session.query(MaintenanceRecord)
+                .filter_by(printer_id=printer_id, maintenance_type_id=maintenance_type_id)
+                .order_by(MaintenanceRecord.performed_at.desc())
+                .first()
+            )
+        finally:
+            session.close()
+
+    def ensure_printer_maintenance_records(self, printer_id: int):
+        """Создать начальные записи обслуживания для принтера если их нет."""
+        session = self.get_session()
+        try:
+            printer = session.query(Printer).get(printer_id)
+            if not printer:
+                return
+
+            types = session.query(MaintenanceType).all()
+            for mt in types:
+                existing = (
+                    session.query(MaintenanceRecord)
+                    .filter_by(printer_id=printer_id, maintenance_type_id=mt.id)
+                    .first()
+                )
+                if not existing:
+                    record = MaintenanceRecord(
+                        printer_id=printer_id,
+                        maintenance_type_id=mt.id,
+                        performed_at=datetime.now(timezone.utc),
+                        print_hours_at=printer.print_hours or 0.0,
+                        notes="Начальная инициализация",
+                        is_forced=False,
+                    )
+                    session.add(record)
+            session.commit()
+        finally:
+            session.close()
+
+    def ensure_all_printers_maintenance(self):
+        """Создать записи обслуживания для всех принтеров у которых их нет."""
+        session = self.get_session()
+        try:
+            printers = session.query(Printer).all()
+            for printer in printers:
+                self.ensure_printer_maintenance_records(printer.id)
+        finally:
+            session.close()
+
+    def get_printer_maintenance_status(self, printer_id: int) -> Dict[str, Any]:
+        """Получить статус обслуживания принтера."""
+        session = self.get_session()
+        try:
+            printer = session.query(Printer).get(printer_id)
+            if not printer:
+                return {}
+
+            types = session.query(MaintenanceType).all()
+            status_list = []
+            needs_maintenance = False
+
+            for mt in types:
+                last_record = (
+                    session.query(MaintenanceRecord)
+                    .filter_by(printer_id=printer_id, maintenance_type_id=mt.id)
+                    .order_by(MaintenanceRecord.performed_at.desc())
+                    .first()
+                )
+
+                if last_record:
+                    hours_since = (printer.print_hours or 0.0) - last_record.print_hours_at
+                    performed_at = last_record.performed_at.isoformat() if last_record.performed_at else None
+                else:
+                    hours_since = printer.print_hours or 0.0
+                    performed_at = None
+
+                hours_remaining = mt.interval_hours - hours_since
+                is_overdue = hours_remaining <= 0
+
+                if is_overdue:
+                    needs_maintenance = True
+
+                status_list.append({
+                    'type_id': mt.id,
+                    'type_code': mt.code,
+                    'type_name': mt.name,
+                    'interval_hours': mt.interval_hours,
+                    'last_performed_at': performed_at,
+                    'hours_since_last': round(hours_since, 1),
+                    'hours_remaining': round(hours_remaining, 1),
+                    'is_overdue': is_overdue,
+                })
+
+            return {
+                'printer_id': printer.id,
+                'printer_name': printer.name,
+                'print_hours': round(printer.print_hours or 0.0, 1),
+                'maintenance_status': status_list,
+                'needs_maintenance': needs_maintenance,
+            }
+        finally:
+            session.close()

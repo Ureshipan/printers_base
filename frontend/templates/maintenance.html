@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Техническое обслуживание</title>
+  <link rel="stylesheet" href="../static/css/style.css">
+  <link rel="stylesheet" href="../static/css/maintenance.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <button class="sidebar-btn" data-route="/">Панель управления</button>
+    <button class="sidebar-btn" data-route="/printer-control">Управление принтером</button>
+    <button class="sidebar-btn" data-route="/planning">Планирование</button>
+    <button class="sidebar-btn active" data-route="/maintenance">Обслуживание</button>
+  </aside>
+
+  <main class="maintenance-main">
+    <header class="maintenance-header">
+      <div>
+        <h1>Техническое обслуживание</h1>
+        <p class="maintenance-subtitle">Отслеживайте состояние принтеров и планируйте профилактику</p>
+      </div>
+      <button id="refreshBtn" class="secondary-btn">Обновить</button>
+    </header>
+
+    <section class="maintenance-content">
+      <div id="maintenanceMessage" class="maintenance-message" hidden></div>
+
+      <!-- Ближайшие обслуживания -->
+      <section class="upcoming-section">
+        <div class="card-header">
+          <h2>Ближайшие обслуживания</h2>
+        </div>
+        <div id="upcomingList" class="upcoming-list">
+          <div class="loading-placeholder">Загрузка...</div>
+        </div>
+      </section>
+
+      <div class="maintenance-grid">
+        <!-- Карточки принтеров -->
+        <section class="printers-status-card">
+          <div class="card-header">
+            <h2>Состояние принтеров</h2>
+            <select id="filterPrinterStatus" class="filter-select">
+              <option value="">Все принтеры</option>
+              <option value="overdue">Требуют обслуживания</option>
+              <option value="ok">В норме</option>
+            </select>
+          </div>
+          <div id="printersStatusList" class="printers-status-list">
+            <div class="loading-placeholder">Загрузка...</div>
+          </div>
+        </section>
+
+        <!-- История обслуживания -->
+        <section class="history-card">
+          <div class="card-header">
+            <h2>История обслуживания</h2>
+            <div class="table-controls">
+              <select id="filterHistoryPrinter" class="filter-select">
+                <option value="">Все принтеры</option>
+              </select>
+              <select id="filterHistoryType" class="filter-select">
+                <option value="">Все типы</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Принтер</th>
+                  <th>Тип</th>
+                  <th>Часы печати</th>
+                  <th>Комментарий</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody">
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Модальное окно отметки обслуживания -->
+  <div class="modal-backdrop hidden" id="maintenanceModal">
+    <div class="modal-window maintenance-window">
+      <div class="modal-header">
+        <h2 id="maintenanceModalTitle">Отметить обслуживание</h2>
+        <button id="closeMaintenanceModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="maintenanceForm" class="modal-form">
+        <input type="hidden" name="printer_id" id="maintenancePrinterId">
+        <input type="hidden" name="maintenance_type_id" id="maintenanceTypeId">
+        <div class="maintenance-info">
+          <p><strong>Принтер:</strong> <span id="maintenancePrinterName">-</span></p>
+          <p><strong>Тип обслуживания:</strong> <span id="maintenanceTypeName">-</span></p>
+        </div>
+        <label class="notes-field">
+          Комментарий (опционально)
+          <textarea name="notes" rows="3" placeholder="Что было сделано, использованные запчасти..."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="cancelMaintenance">Отмена</button>
+          <button type="submit" class="primary-btn">Подтвердить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно принудительного обслуживания -->
+  <div class="modal-backdrop hidden" id="forceMaintenanceModal">
+    <div class="modal-window maintenance-window">
+      <div class="modal-header">
+        <h2>Принудительное обслуживание</h2>
+        <button id="closeForceModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="forceMaintenanceForm" class="modal-form">
+        <input type="hidden" name="printer_id" id="forcePrinterId">
+        <div class="maintenance-info">
+          <p><strong>Принтер:</strong> <span id="forcePrinterName">-</span></p>
+        </div>
+        <label>
+          Выберите тип обслуживания
+          <select name="maintenance_type_id" id="forceTypeSelect" required>
+            <option value="">Выберите тип...</option>
+          </select>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="cancelForce">Отмена</button>
+          <button type="submit" class="primary-btn btn-warning">Затребовать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="../static/js/maintenance.js"></script>
+</body>
+</html>
