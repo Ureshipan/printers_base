@@ -30,6 +30,7 @@ body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #23233
 .sidebar .sidebar-btn[data-route="/printer-control"] { order: 2; }
 .sidebar .sidebar-btn[data-route="/planning"] { order: 3; }
 .sidebar .sidebar-btn[data-route="/maintenance"] { order: 4; }
+.sidebar .sidebar-btn[data-route="/spools"] { order: 5; }
 .dashboard { margin-left: 220px; padding: 14px 18px; min-height: 100vh; }
 
 /* Color themes for different printer states - only button colors */

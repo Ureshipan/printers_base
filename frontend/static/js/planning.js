@@ -4,6 +4,7 @@ let printers = [];
 let coils = [];
 let currentTaskId = null;
 let currentProjectId = null;
+let pendingGcodeFile = null;  // Файл G-code для загрузки при создании задачи
 
 const taskModal = document.getElementById('taskModal');
 const openTaskModalBtn = document.getElementById('openTaskModal');
@@ -23,6 +24,12 @@ const openProjectModalBtn = document.getElementById('openProjectModal');
 const closeProjectModalBtn = document.getElementById('closeProjectModal');
 const cancelProjectChangesBtn = document.getElementById('cancelProjectChanges');
 const projectModalTitle = document.getElementById('projectModalTitle');
+
+// Элементы для загрузки G-code в модальном окне
+const taskGcodeInput = document.getElementById('taskGcodeInput');
+const gcodeFileName = document.getElementById('gcodeFileName');
+const gcodeParseInfo = document.getElementById('gcodeParseInfo');
+const gcodeUploadSection = taskGcodeInput?.closest('.gcode-upload-section');
 
 const STATUS_LABELS = {
   pending: 'Ожидает',
@@ -70,6 +77,10 @@ function registerEventListeners() {
   filterProject.addEventListener('change', renderTasks);
   filterStatus.addEventListener('change', renderTasks);
   gcodeFileInput.addEventListener('change', handleGcodeFileSelect);
+  // Обработчик загрузки G-code в модальном окне создания задачи
+  if (taskGcodeInput) {
+    taskGcodeInput.addEventListener('change', handleTaskGcodeSelect);
+  }
   openProjectModalBtn.addEventListener('click', () => openProjectModal());
   closeProjectModalBtn.addEventListener('click', closeProjectModal);
   cancelProjectChangesBtn.addEventListener('click', closeProjectModal);
@@ -154,13 +165,61 @@ function populateSelectOptions() {
 
   coilSelect.innerHTML = '<option value="">Не выбрано</option>';
   coils.forEach(coil => {
+    // Пропускаем архивные катушки
+    if (coil.archived) return;
+
     const option = document.createElement('option');
     option.value = coil.id;
+    // Показываем: название (материал) - остаток г / %
+    const remainsText = coil.remains != null
+      ? `${Math.round(coil.remains)}г`
+      : '';
+    const percentText = coil.remains_percent != null
+      ? ` (${coil.remains_percent}%)`
+      : '';
+    const colorDot = coil.color_hex ? `● ` : '';
+
     option.textContent = coil.material
-      ? `${coil.name} (${coil.material})`
-      : coil.name;
+      ? `${colorDot}${coil.name} (${coil.material}) - ${remainsText}${percentText}`
+      : `${colorDot}${coil.name} - ${remainsText}${percentText}`;
+
+    // Цветовой код для статуса
+    if (coil.color_hex) {
+      option.style.color = coil.color_hex;
+    }
+
+    // Сохраняем данные для проверки
+    option.dataset.remains = coil.remains || 0;
+    option.dataset.status = coil.remains_status || 'unknown';
+
     coilSelect.appendChild(option);
   });
+
+  // Добавляем обработчик для проверки достаточности материала
+  coilSelect.addEventListener('change', checkMaterialSufficiency);
+}
+
+// Проверка достаточности материала при выборе катушки
+function checkMaterialSufficiency() {
+  const coilSelect = taskForm.elements['coil_id'];
+  const selectedOption = coilSelect.selectedOptions[0];
+  const estimatedFilament = parseFloat(taskForm.elements['material_amount']?.value) || 0;
+
+  // Удаляем старое предупреждение
+  const oldWarning = document.getElementById('coilWarning');
+  if (oldWarning) oldWarning.remove();
+
+  if (!selectedOption || !selectedOption.value) return;
+
+  const remains = parseFloat(selectedOption.dataset.remains) || 0;
+
+  if (estimatedFilament > 0 && remains < estimatedFilament) {
+    const warning = document.createElement('div');
+    warning.id = 'coilWarning';
+    warning.className = 'coil-warning';
+    warning.innerHTML = `⚠️ Недостаточно материала! Требуется ${Math.round(estimatedFilament)}г, на катушке ${Math.round(remains)}г`;
+    coilSelect.parentNode.appendChild(warning);
+  }
 }
 
 function populateProjectsList() {
@@ -355,6 +414,7 @@ function openTaskModal(taskId = null) {
   taskModal.classList.remove('hidden');
   taskForm.reset();
   populateSelectOptions();
+  resetGcodeUploadUI();  // Сброс состояния загрузки G-code
 
   if (taskId) {
     modalTitle.textContent = 'Редактирование задачи';
@@ -370,6 +430,12 @@ function openTaskModal(taskId = null) {
       taskForm.elements['time_start'].value = toInputDateTime(task.time_start);
       taskForm.elements['time_end'].value = toInputDateTime(task.time_end);
       taskForm.elements['notes'].value = task.notes || '';
+
+      // Показываем информацию о загруженном G-code файле
+      if (task.gcode?.has_file && gcodeFileName) {
+        gcodeFileName.textContent = task.gcode.original_name || 'Файл загружен';
+        gcodeUploadSection?.classList.add('has-file');
+      }
     }
   } else {
     modalTitle.textContent = 'Новая задача';
@@ -425,6 +491,8 @@ async function handleTaskSubmit(event) {
   }
 
   try {
+    let taskId = currentTaskId;
+
     if (currentTaskId) {
       await fetchJson(`/api/tasks/${currentTaskId}`, {
         method: 'PATCH',
@@ -433,13 +501,31 @@ async function handleTaskSubmit(event) {
       });
       showMessage('Задача обновлена');
     } else {
-      await fetchJson('/api/tasks', {
+      // Создаём задачу и получаем её ID
+      const response = await fetchJson('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      taskId = response.task?.id;
       showMessage('Задача создана');
     }
+
+    // Загружаем G-code файл, если он был выбран при создании
+    if (pendingGcodeFile && taskId) {
+      const gcodeFormData = new FormData();
+      gcodeFormData.append('file', pendingGcodeFile);
+      try {
+        await fetchJson(`/api/tasks/${taskId}/gcode`, {
+          method: 'POST',
+          body: gcodeFormData
+        });
+        showMessage('G-code загружен');
+      } catch (gcodeError) {
+        showMessage('Задача создана, но G-code не загружен: ' + gcodeError.message, true);
+      }
+    }
+
     closeTaskModal();
     await loadTasks();
     populateProjectsList();
@@ -491,6 +577,143 @@ async function handleGcodeFileSelect(event) {
   } finally {
     delete gcodeFileInput.dataset.taskId;
     gcodeFileInput.value = '';
+  }
+}
+
+/**
+ * Обработчик выбора G-code файла в модальном окне создания задачи.
+ * Парсит файл и автоматически заполняет поля формы.
+ */
+async function handleTaskGcodeSelect(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    resetGcodeUploadUI();
+    return;
+  }
+
+  pendingGcodeFile = file;
+
+  // Показываем имя файла
+  if (gcodeFileName) {
+    gcodeFileName.textContent = file.name;
+  }
+  if (gcodeUploadSection) {
+    gcodeUploadSection.classList.add('has-file');
+  }
+
+  // Показываем индикатор загрузки
+  if (gcodeParseInfo) {
+    gcodeParseInfo.classList.remove('hidden');
+    gcodeParseInfo.classList.add('loading');
+    gcodeParseInfo.innerHTML = '⏳ Анализ файла...';
+  }
+
+  // Парсим файл на сервере
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await fetch('/api/gcode/parse', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Ошибка парсинга');
+    }
+
+    // Автозаполнение полей формы
+    fillFormFromGcodeData(data);
+
+    // Показываем информацию о файле
+    renderGcodeParseInfo(data);
+
+  } catch (error) {
+    if (gcodeParseInfo) {
+      gcodeParseInfo.classList.remove('loading');
+      gcodeParseInfo.innerHTML = `<span style="color:#ff8aa8">⚠️ ${error.message}</span>`;
+    }
+    showMessage('Не удалось распарсить G-code: ' + error.message, true);
+  }
+}
+
+/**
+ * Заполняет поля формы данными из распарсенного G-code.
+ */
+function fillFormFromGcodeData(data) {
+  // Название задачи (только если поле пустое)
+  const nameInput = taskForm.elements['name'];
+  if (nameInput && !nameInput.value && data.suggested_name) {
+    nameInput.value = data.suggested_name;
+  }
+
+  // Расход материала
+  const materialInput = taskForm.elements['material_amount'];
+  if (materialInput && data.estimated_filament) {
+    materialInput.value = data.estimated_filament;
+  }
+}
+
+/**
+ * Отображает информацию о распарсенном G-code файле.
+ */
+function renderGcodeParseInfo(data) {
+  if (!gcodeParseInfo) return;
+
+  gcodeParseInfo.classList.remove('loading', 'hidden');
+
+  const rows = [];
+
+  if (data.estimated_filament) {
+    rows.push(`<div class="parse-row"><span class="parse-label">Филамент:</span><span class="parse-value">${data.estimated_filament.toFixed(1)} г</span></div>`);
+  }
+  if (data.estimated_time_minutes) {
+    const hours = Math.floor(data.estimated_time_minutes / 60);
+    const mins = Math.round(data.estimated_time_minutes % 60);
+    const timeStr = hours > 0 ? `${hours}ч ${mins}м` : `${mins} мин`;
+    rows.push(`<div class="parse-row"><span class="parse-label">Время печати:</span><span class="parse-value">${timeStr}</span></div>`);
+  }
+  if (data.layer_count) {
+    rows.push(`<div class="parse-row"><span class="parse-label">Слоёв:</span><span class="parse-value">${data.layer_count}</span></div>`);
+  }
+  if (data.layer_height) {
+    rows.push(`<div class="parse-row"><span class="parse-label">Высота слоя:</span><span class="parse-value">${data.layer_height} мм</span></div>`);
+  }
+  if (data.nozzle_temp) {
+    rows.push(`<div class="parse-row"><span class="parse-label">Температура сопла:</span><span class="parse-value">${data.nozzle_temp}°C</span></div>`);
+  }
+  if (data.bed_temp) {
+    rows.push(`<div class="parse-row"><span class="parse-label">Температура стола:</span><span class="parse-value">${data.bed_temp}°C</span></div>`);
+  }
+  if (data.slicer) {
+    rows.push(`<div class="parse-row"><span class="parse-label">Слайсер:</span><span class="parse-value">${data.slicer}</span></div>`);
+  }
+
+  if (rows.length > 0) {
+    gcodeParseInfo.innerHTML = rows.join('');
+  } else {
+    gcodeParseInfo.innerHTML = '<span style="color:#7378b8">Метаданные не найдены</span>';
+  }
+}
+
+/**
+ * Сбрасывает UI загрузки G-code.
+ */
+function resetGcodeUploadUI() {
+  pendingGcodeFile = null;
+  if (taskGcodeInput) {
+    taskGcodeInput.value = '';
+  }
+  if (gcodeFileName) {
+    gcodeFileName.textContent = '';
+  }
+  if (gcodeUploadSection) {
+    gcodeUploadSection.classList.remove('has-file');
+  }
+  if (gcodeParseInfo) {
+    gcodeParseInfo.classList.add('hidden');
+    gcodeParseInfo.innerHTML = '';
   }
 }
 

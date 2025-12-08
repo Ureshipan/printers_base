@@ -238,6 +238,18 @@
   box-sizing: border-box;
 }
 
+.filter-select,
+.modal-form select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #b3b5d6 50%),
+    linear-gradient(135deg, #b3b5d6 50%, transparent 50%);
+  background-position: calc(100% - 12px) 50%, calc(100% - 6px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 26px;
+  cursor: pointer;
+}
+
 .filter-select {
   max-width: 180px;
 }
@@ -382,6 +394,97 @@
   gap: 18px;
 }
 
+/* Секция загрузки G-code в модальном окне */
+.gcode-upload-section {
+  background: rgba(40, 42, 80, 0.4);
+  border: 2px dashed rgba(104, 114, 255, 0.35);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.gcode-upload-section:hover {
+  border-color: rgba(104, 114, 255, 0.6);
+  background: rgba(40, 42, 80, 0.55);
+}
+
+.gcode-upload-section.has-file {
+  border-style: solid;
+  border-color: rgba(90, 220, 150, 0.5);
+  background: rgba(30, 60, 45, 0.3);
+}
+
+.gcode-upload-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.gcode-upload-label input[type="file"] {
+  display: none;
+}
+
+.gcode-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(69, 71, 255, 0.2);
+  border-radius: 10px;
+  color: #d4d7ff;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.2s ease;
+}
+
+.gcode-upload-label:hover .gcode-upload-btn {
+  background: rgba(69, 71, 255, 0.35);
+}
+
+.gcode-upload-section .gcode-file-name {
+  font-size: 13px;
+  color: #5adc96;
+  margin-top: 4px;
+}
+
+.gcode-parse-info {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(20, 22, 45, 0.6);
+  border-radius: 8px;
+  text-align: left;
+  font-size: 13px;
+  color: #b0b4df;
+}
+
+.gcode-parse-info .parse-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(104, 114, 255, 0.1);
+}
+
+.gcode-parse-info .parse-row:last-child {
+  border-bottom: none;
+}
+
+.gcode-parse-info .parse-label {
+  color: #8a8dbd;
+}
+
+.gcode-parse-info .parse-value {
+  color: #e0e2f5;
+  font-weight: 500;
+}
+
+.gcode-parse-info.loading {
+  text-align: center;
+  color: #7d83ff;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -461,4 +564,28 @@
   .modal-window {
     padding: 22px;
   }
+}
+
+/* Предупреждение о недостаточности материала */
+.coil-warning {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 138, 101, 0.15);
+  border: 1px solid rgba(255, 138, 101, 0.4);
+  border-radius: 6px;
+  color: #ff8a65;
+  font-size: 0.85rem;
+}
+
+/* Улучшенный dropdown катушек */
+select[name="coil_id"] option {
+  padding: 8px;
+}
+
+select[name="coil_id"] option[data-status="critical"] {
+  background: rgba(220, 53, 69, 0.1);
+}
+
+select[name="coil_id"] option[data-status="warning"] {
+  background: rgba(255, 193, 7, 0.1);
 }

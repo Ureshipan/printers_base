@@ -334,13 +334,21 @@
 }
 
 .filter-select {
+  appearance: none;
   background: rgba(23, 25, 53, 0.95);
+  background-image: linear-gradient(45deg, transparent 50%, #b3b5d6 50%),
+    linear-gradient(135deg, #b3b5d6 50%, transparent 50%);
+  background-position: calc(100% - 12px) 50%, calc(100% - 6px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
   border: 1px solid rgba(104, 114, 255, 0.23);
   color: #f8f9ff;
   border-radius: 10px;
   padding: 8px 12px;
+  padding-right: 26px;
   font-size: 13px;
   max-width: 180px;
+  cursor: pointer;
 }
 
 /* Таблица обёртка */
@@ -449,6 +457,17 @@
   font-size: 14px;
   margin-top: 6px;
   box-sizing: border-box;
+}
+
+.modal-form select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #b3b5d6 50%),
+    linear-gradient(135deg, #b3b5d6 50%, transparent 50%);
+  background-position: calc(100% - 12px) 50%, calc(100% - 6px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 26px;
+  cursor: pointer;
 }
 
 .notes-field textarea {

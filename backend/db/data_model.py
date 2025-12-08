@@ -34,9 +34,11 @@ class Printer(Base):
     is_virtual = Column(Boolean, default=False)
     virtual_status = Column(String, default="idle")
     print_hours = Column(Float, default=0.0)  # Общее время печати в часах
+    active_coil_id = Column(Integer, ForeignKey('coils.id'))  # Активная катушка принтера
 
     tasks = relationship('Task', back_populates='printer')
     maintenance_records = relationship('MaintenanceRecord', back_populates='printer', cascade='all, delete-orphan')
+    active_coil = relationship('Coil', foreign_keys=[active_coil_id])
 
 
 class Material(Base):
@@ -47,15 +49,97 @@ class Material(Base):
     table_tmp = Column(String)
 
 
+class Vendor(Base):
+    """Производитель филамента."""
+    __tablename__ = 'vendors'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    comment = Column(Text)
+    empty_spool_weight = Column(Float)  # Дефолтный вес пустой катушки в граммах
+
+    filaments = relationship('Filament', back_populates='vendor')
+
+
+class Filament(Base):
+    """Филамент - продукт производителя с типом пластика."""
+    __tablename__ = 'filaments'
+    id = Column(Integer, primary_key=True)
+    vendor_id = Column(Integer, ForeignKey('vendors.id'))
+    name = Column(String, nullable=False)  # Название продукта (например "PLA+ Premium")
+    material = Column(String)  # Тип пластика (PLA, PETG, ABS, TPU и т.д.)
+    color_hex = Column(String(7))  # Цвет (#RRGGBB)
+    diameter = Column(Float, default=1.75)  # Диаметр в мм
+    density = Column(Float)  # Плотность г/см³
+    weight = Column(Float, default=1000)  # Стандартный вес филамента в граммах
+    empty_spool_weight = Column(Float, default=200)  # Стандартный вес пустой катушки в граммах
+    description = Column(Text)  # Описание
+
+    vendor = relationship('Vendor', back_populates='filaments')
+    coils = relationship('Coil', back_populates='filament')
+
+
 class Coil(Base):
+    """Катушка филамента."""
     __tablename__ = 'coils'
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    material_id = Column(Integer, ForeignKey('materials.id'))
-    remains = Column(Float)
+    filament_id = Column(Integer, ForeignKey('filaments.id'))  # Основная связь с филаментом
+    material_id = Column(Integer, ForeignKey('materials.id'))  # Deprecated, для совместимости
+    vendor_id = Column(Integer, ForeignKey('vendors.id'))  # Deprecated, для совместимости
+    remains = Column(Float)  # Остаток филамента в граммах
 
-    material = relationship('Material')
+    # Расширенные поля (Spoolman-like)
+    spool_weight = Column(Float)  # Вес пустой катушки в граммах
+    initial_weight = Column(Float)  # Начальный вес филамента в граммах
+    color_hex = Column(String(7))  # Цвет филамента (#RRGGBB), может отличаться от филамента
+    price = Column(Float)  # Цена катушки
+    location = Column(String)  # Местоположение хранения
+    lot_nr = Column(String)  # Номер партии
+    comment = Column(Text)  # Примечания
+    archived = Column(Boolean, default=False)  # Архивирована ли
+    first_used = Column(DateTime)  # Дата первого использования
+    last_used = Column(DateTime)  # Дата последнего использования
+
+    filament = relationship('Filament', back_populates='coils')
+    material = relationship('Material')  # Deprecated
+    vendor = relationship('Vendor')  # Deprecated
     tasks = relationship('Task', back_populates='coil')
+    history = relationship('SpoolHistory', back_populates='coil', cascade='all, delete-orphan')
+
+    @property
+    def used_weight(self):
+        """Вычисляемое поле: использовано = начальный - остаток."""
+        if self.initial_weight is None or self.remains is None:
+            return None
+        return self.initial_weight - self.remains
+
+    @property
+    def total_weight(self):
+        """Полный вес катушки с филаментом."""
+        spool = self.spool_weight or 0
+        filament = self.remains or 0
+        return spool + filament
+
+    @property
+    def remains_percent(self):
+        """Процент оставшегося филамента."""
+        if self.initial_weight is None or self.initial_weight <= 0:
+            return None
+        if self.remains is None:
+            return None
+        return round((self.remains / self.initial_weight) * 100, 1)
+
+    @property
+    def remains_status(self):
+        """Статус остатка: ok (>50%), warning (>20%), critical (<=20%)."""
+        pct = self.remains_percent
+        if pct is None:
+            return 'unknown'
+        if pct > 50:
+            return 'ok'
+        elif pct > 20:
+            return 'warning'
+        return 'critical'
 
 
 class Project(Base):
@@ -98,6 +182,20 @@ class Task(Base):
     printer = relationship('Printer', back_populates='tasks')
     coil = relationship('Coil', back_populates='tasks')
     project = relationship('Project', back_populates='tasks')
+
+
+class SpoolHistory(Base):
+    """История расхода филамента с катушки."""
+    __tablename__ = 'spool_history'
+    id = Column(Integer, primary_key=True)
+    coil_id = Column(Integer, ForeignKey('coils.id'), nullable=False)
+    task_id = Column(Integer, ForeignKey('tasks.id'))  # Может быть NULL при ручной корректировке
+    used_weight = Column(Float, nullable=False)  # Использовано в граммах (отрицательное = возврат)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    notes = Column(Text)  # Примечание (ручное списание, отмена и т.д.)
+
+    coil = relationship('Coil', back_populates='history')
+    task = relationship('Task')
 
 
 class MaintenanceType(Base):
@@ -179,6 +277,42 @@ class DBModel:
             self._add_column_if_missing(conn, 'tasks', 'gcode_nozzle_temp', "INTEGER")
             self._add_column_if_missing(conn, 'tasks', 'gcode_bed_temp', "INTEGER")
             self._add_column_if_missing(conn, 'tasks', 'gcode_slicer', "TEXT")
+
+            # Активная катушка принтера
+            self._add_column_if_missing(conn, 'printers', 'active_coil_id', "INTEGER REFERENCES coils(id)")
+
+            # Расширенные поля катушек (Spoolman-like)
+            self._add_column_if_missing(conn, 'coils', 'vendor_id', "INTEGER REFERENCES vendors(id)")
+            self._add_column_if_missing(conn, 'coils', 'spool_weight', "FLOAT")
+            self._add_column_if_missing(conn, 'coils', 'initial_weight', "FLOAT")
+            self._add_column_if_missing(conn, 'coils', 'color_hex', "TEXT")
+            self._add_column_if_missing(conn, 'coils', 'price', "FLOAT")
+            self._add_column_if_missing(conn, 'coils', 'location', "TEXT")
+            self._add_column_if_missing(conn, 'coils', 'lot_nr', "TEXT")
+            self._add_column_if_missing(conn, 'coils', 'comment', "TEXT")
+            self._add_column_if_missing(conn, 'coils', 'archived', "BOOLEAN DEFAULT 0")
+            self._add_column_if_missing(conn, 'coils', 'first_used', "DATETIME")
+            self._add_column_if_missing(conn, 'coils', 'last_used', "DATETIME")
+
+            # Таблица filaments (если не существует)
+            self._create_table_if_missing(conn, 'filaments', """
+                id INTEGER PRIMARY KEY,
+                vendor_id INTEGER REFERENCES vendors(id),
+                name TEXT NOT NULL,
+                material TEXT,
+                color_hex TEXT,
+                diameter FLOAT DEFAULT 1.75,
+                density FLOAT,
+                weight FLOAT DEFAULT 1000,
+                empty_spool_weight FLOAT DEFAULT 200,
+                description TEXT
+            """)
+            # Миграция: добавить поле empty_spool_weight в существующую таблицу filaments
+            self._add_column_if_missing(conn, 'filaments', 'empty_spool_weight', "FLOAT DEFAULT 200")
+
+            # Связь катушки с филаментом
+            self._add_column_if_missing(conn, 'coils', 'filament_id', "INTEGER REFERENCES filaments(id)")
+
             conn.commit()
 
     @staticmethod
@@ -187,6 +321,15 @@ class DBModel:
         columns = {row[1] for row in existing}
         if column_name not in columns:
             conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"))
+
+    @staticmethod
+    def _create_table_if_missing(conn, table_name: str, columns_def: str):
+        """Создать таблицу если она не существует."""
+        existing = conn.execute(text(
+            f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
+        ))
+        if not existing.fetchone():
+            conn.execute(text(f"CREATE TABLE {table_name} ({columns_def})"))
 
     # Printer helpers
     def add_printer(self, name: str, last_service: Optional[str] = None, **kwargs) -> Printer:
@@ -347,10 +490,151 @@ class DBModel:
         finally:
             session.close()
 
-    def add_coil(self, name, material_id, remains):
+    # === Vendor helpers ===
+
+    def add_vendor(self, name: str, comment: Optional[str] = None,
+                   empty_spool_weight: Optional[float] = None) -> Vendor:
+        """Добавить производителя."""
         session = self.get_session()
         try:
-            coil = Coil(name=name, material_id=material_id, remains=remains)
+            vendor = Vendor(name=name, comment=comment, empty_spool_weight=empty_spool_weight)
+            session.add(vendor)
+            session.commit()
+            session.refresh(vendor)
+            return vendor
+        finally:
+            session.close()
+
+    def get_vendors(self):
+        """Получить всех производителей."""
+        session = self.get_session()
+        try:
+            return session.query(Vendor).all()
+        finally:
+            session.close()
+
+    def get_vendor(self, vendor_id: int) -> Optional[Vendor]:
+        """Получить производителя по ID."""
+        session = self.get_session()
+        try:
+            return session.query(Vendor).get(vendor_id)
+        finally:
+            session.close()
+
+    def update_vendor(self, vendor_id: int, **kwargs) -> Optional[Vendor]:
+        """Обновить производителя."""
+        session = self.get_session()
+        try:
+            vendor = session.query(Vendor).get(vendor_id)
+            if not vendor:
+                return None
+            data = self._filter_model_kwargs(Vendor, kwargs)
+            for key, value in data.items():
+                setattr(vendor, key, value)
+            session.commit()
+            session.refresh(vendor)
+            return vendor
+        finally:
+            session.close()
+
+    def delete_vendor(self, vendor_id: int) -> bool:
+        """Удалить производителя."""
+        session = self.get_session()
+        try:
+            vendor = session.query(Vendor).get(vendor_id)
+            if not vendor:
+                return False
+            session.delete(vendor)
+            session.commit()
+            return True
+        except SQLAlchemyError:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    # === Filament helpers ===
+
+    def add_filament(self, name: str, vendor_id: Optional[int] = None,
+                     material: Optional[str] = None, **kwargs) -> Filament:
+        """Добавить филамент."""
+        session = self.get_session()
+        try:
+            data = self._filter_model_kwargs(Filament, kwargs)
+            filament = Filament(name=name, vendor_id=vendor_id, material=material, **data)
+            session.add(filament)
+            session.commit()
+            filament_id = filament.id
+        finally:
+            session.close()
+        # Возвращаем с eager-загруженным vendor
+        return self.get_filament(filament_id)
+
+    def get_filaments(self, vendor_id: Optional[int] = None, material: Optional[str] = None):
+        """Получить филаменты с фильтрами."""
+        session = self.get_session()
+        try:
+            query = session.query(Filament).options(joinedload(Filament.vendor))
+            if vendor_id is not None:
+                query = query.filter(Filament.vendor_id == vendor_id)
+            if material:
+                query = query.filter(Filament.material == material)
+            return query.all()
+        finally:
+            session.close()
+
+    def get_filament(self, filament_id: int) -> Optional[Filament]:
+        """Получить филамент по ID."""
+        session = self.get_session()
+        try:
+            return session.query(Filament).options(
+                joinedload(Filament.vendor)
+            ).get(filament_id)
+        finally:
+            session.close()
+
+    def update_filament(self, filament_id: int, **kwargs) -> Optional[Filament]:
+        """Обновить филамент."""
+        session = self.get_session()
+        try:
+            filament = session.query(Filament).get(filament_id)
+            if not filament:
+                return None
+            data = self._filter_model_kwargs(Filament, kwargs)
+            for key, value in data.items():
+                setattr(filament, key, value)
+            session.commit()
+        finally:
+            session.close()
+        # Возвращаем с eager-загруженным vendor
+        return self.get_filament(filament_id)
+
+    def delete_filament(self, filament_id: int) -> bool:
+        """Удалить филамент."""
+        session = self.get_session()
+        try:
+            filament = session.query(Filament).get(filament_id)
+            if not filament:
+                return False
+            session.delete(filament)
+            session.commit()
+            return True
+        except SQLAlchemyError:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    # === Coil helpers (расширенные) ===
+
+    def add_coil(self, name: str, remains: float, filament_id: Optional[int] = None,
+                 material_id: Optional[int] = None, **kwargs) -> Coil:
+        """Добавить катушку с расширенными полями."""
+        session = self.get_session()
+        try:
+            data = self._filter_model_kwargs(Coil, kwargs)
+            coil = Coil(name=name, remains=remains, filament_id=filament_id,
+                       material_id=material_id, **data)
             session.add(coil)
             session.commit()
             session.refresh(coil)
@@ -358,13 +642,201 @@ class DBModel:
         finally:
             session.close()
 
-    def get_coils(self):
+    def get_coils(self, filament_id: Optional[int] = None, material_id: Optional[int] = None,
+                  vendor_id: Optional[int] = None, archived: Optional[bool] = None,
+                  include_archived: bool = False):
+        """Получить катушки с фильтрами."""
+        session = self.get_session()
+        try:
+            query = session.query(Coil).options(
+                joinedload(Coil.filament).joinedload(Filament.vendor),
+                joinedload(Coil.material),
+                joinedload(Coil.vendor),
+            )
+            if filament_id is not None:
+                query = query.filter(Coil.filament_id == filament_id)
+            if material_id is not None:
+                query = query.filter(Coil.material_id == material_id)
+            if vendor_id is not None:
+                query = query.filter(Coil.vendor_id == vendor_id)
+            if archived is not None:
+                query = query.filter(Coil.archived == archived)
+            elif not include_archived:
+                query = query.filter((Coil.archived.is_(False)) | (Coil.archived.is_(None)))
+            return query.all()
+        finally:
+            session.close()
+
+    def get_coil(self, coil_id: int) -> Optional[Coil]:
+        """Получить катушку по ID с загрузкой связей."""
         session = self.get_session()
         try:
             return (
                 session.query(Coil)
-                .all()
+                .options(
+                    joinedload(Coil.filament).joinedload(Filament.vendor),
+                    joinedload(Coil.material),
+                    joinedload(Coil.vendor),
+                    joinedload(Coil.history),
+                )
+                .get(coil_id)
             )
+        finally:
+            session.close()
+
+    def update_coil(self, coil_id: int, **kwargs) -> Optional[Coil]:
+        """Обновить катушку."""
+        session = self.get_session()
+        try:
+            coil = session.query(Coil).get(coil_id)
+            if not coil:
+                return None
+            data = self._filter_model_kwargs(Coil, kwargs)
+            for key, value in data.items():
+                setattr(coil, key, value)
+            session.commit()
+            session.refresh(coil)
+            return coil
+        finally:
+            session.close()
+
+    def delete_coil(self, coil_id: int) -> bool:
+        """Удалить катушку."""
+        session = self.get_session()
+        try:
+            coil = session.query(Coil).get(coil_id)
+            if not coil:
+                return False
+            session.delete(coil)
+            session.commit()
+            return True
+        except SQLAlchemyError:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    def archive_coil(self, coil_id: int) -> Optional[Coil]:
+        """Архивировать катушку."""
+        return self.update_coil(coil_id, archived=True)
+
+    def unarchive_coil(self, coil_id: int) -> Optional[Coil]:
+        """Разархивировать катушку."""
+        return self.update_coil(coil_id, archived=False)
+
+    def adjust_coil_remains(self, coil_id: int, new_remains: float,
+                             notes: Optional[str] = None) -> Optional[Coil]:
+        """Ручная корректировка остатка катушки с записью в историю."""
+        session = self.get_session()
+        try:
+            coil = session.query(Coil).get(coil_id)
+            if not coil:
+                return None
+
+            old_remains = coil.remains or 0
+            diff = old_remains - new_remains  # Положительное = списание
+
+            # Записываем в историю
+            history = SpoolHistory(
+                coil_id=coil_id,
+                task_id=None,
+                used_weight=diff,
+                notes=notes or "Ручная корректировка",
+            )
+            session.add(history)
+
+            coil.remains = new_remains
+            session.commit()
+            session.refresh(coil)
+            return coil
+        finally:
+            session.close()
+
+    # === SpoolHistory helpers ===
+
+    def add_spool_history(self, coil_id: int, used_weight: float,
+                          task_id: Optional[int] = None, notes: Optional[str] = None) -> SpoolHistory:
+        """Добавить запись в историю расхода."""
+        session = self.get_session()
+        try:
+            history = SpoolHistory(
+                coil_id=coil_id,
+                task_id=task_id,
+                used_weight=used_weight,
+                notes=notes,
+            )
+            session.add(history)
+            session.commit()
+            session.refresh(history)
+            return history
+        finally:
+            session.close()
+
+    def get_spool_history(self, coil_id: Optional[int] = None,
+                          task_id: Optional[int] = None, limit: int = 100):
+        """Получить историю расхода с фильтрами."""
+        session = self.get_session()
+        try:
+            query = (
+                session.query(SpoolHistory)
+                .options(joinedload(SpoolHistory.task))
+                .order_by(SpoolHistory.timestamp.desc())
+            )
+            if coil_id is not None:
+                query = query.filter(SpoolHistory.coil_id == coil_id)
+            if task_id is not None:
+                query = query.filter(SpoolHistory.task_id == task_id)
+            return query.limit(limit).all()
+        finally:
+            session.close()
+
+    def delete_spool_history(self, history_id: int) -> bool:
+        """Удалить запись из истории."""
+        session = self.get_session()
+        try:
+            history = session.query(SpoolHistory).get(history_id)
+            if not history:
+                return False
+            session.delete(history)
+            session.commit()
+            return True
+        finally:
+            session.close()
+
+    def deduct_material(self, coil_id: int, amount: float, task_id: Optional[int] = None,
+                        notes: Optional[str] = None) -> Optional[Coil]:
+        """Списать материал с катушки (автоматическое при завершении задачи)."""
+        session = self.get_session()
+        try:
+            coil = session.query(Coil).get(coil_id)
+            if not coil:
+                return None
+
+            # Записываем в историю
+            history = SpoolHistory(
+                coil_id=coil_id,
+                task_id=task_id,
+                used_weight=amount,
+                notes=notes or "Автосписание при завершении задачи",
+            )
+            session.add(history)
+
+            # Обновляем остаток
+            old_remains = coil.remains or 0
+            coil.remains = max(0, old_remains - amount)
+            coil.last_used = datetime.now(timezone.utc)
+
+            # Если первое использование не установлено
+            if not coil.first_used:
+                coil.first_used = datetime.now(timezone.utc)
+
+            # Автоматическое архивирование если кончился филамент
+            if coil.remains <= 0:
+                coil.archived = True
+
+            session.commit()
+            session.refresh(coil)
+            return coil
         finally:
             session.close()
 

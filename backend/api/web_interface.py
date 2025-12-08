@@ -26,7 +26,7 @@ sys.path.append(PROJECT_ROOT)
 if os.path.exists(os.path.join(PROJECT_ROOT, ".env")):
     load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
-from backend.db.data_model import DBModel, Coil, Printer, Project, Task, MaintenanceType, MaintenanceRecord  # noqa: E402
+from backend.db.data_model import DBModel, Coil, Printer, Project, Task, MaintenanceType, MaintenanceRecord, Vendor, SpoolHistory  # noqa: E402
 from backend.services.gcode_parser import parse_gcode_file  # noqa: E402
 
 
@@ -470,6 +470,11 @@ def maintenance():
     return render_template('maintenance.html')
 
 
+@app.route('/spools')
+def spools():
+    return render_template('spools.html')
+
+
 # ---------------------------------------------------------------------------
 # Routes - API
 # ---------------------------------------------------------------------------
@@ -807,18 +812,188 @@ def api_project_detail(project_id: int):
     }), 409
 
 
-@app.route('/api/coils')
-def api_get_coils():
-    coils = db.get_coils()
+def serialize_coil(coil: Coil) -> dict:
+    """Сериализация катушки с расширенными полями."""
+    # Данные из филамента (приоритетные)
+    filament = coil.filament
+    filament_data = None
+    if filament:
+        filament_data = {
+            "id": filament.id,
+            "name": filament.name,
+            "material": filament.material,
+            "color_hex": filament.color_hex,
+            "vendor_id": filament.vendor_id,
+            "vendor_name": filament.vendor.name if filament.vendor else None,
+        }
+
+    # Цвет: из катушки или из филамента
+    color = coil.color_hex or (filament.color_hex if filament else None)
+
+    return {
+        "id": coil.id,
+        "name": coil.name,
+        "filament": filament_data,
+        "filament_id": coil.filament_id,
+        # Deprecated поля для совместимости
+        "material": coil.material.name if coil.material else (filament.material if filament else None),
+        "material_id": coil.material_id,
+        "vendor": {"id": coil.vendor.id, "name": coil.vendor.name} if coil.vendor else (
+            {"id": filament.vendor.id, "name": filament.vendor.name} if filament and filament.vendor else None
+        ),
+        "vendor_id": coil.vendor_id,
+        "remains": coil.remains,
+        "initial_weight": coil.initial_weight,
+        "used_weight": coil.used_weight,
+        "spool_weight": coil.spool_weight,
+        "total_weight": coil.total_weight,
+        "color_hex": color,
+        "price": coil.price,
+        "location": coil.location,
+        "lot_nr": coil.lot_nr,
+        "comment": coil.comment,
+        "archived": coil.archived or False,
+        "first_used": coil.first_used.isoformat() if coil.first_used else None,
+        "last_used": coil.last_used.isoformat() if coil.last_used else None,
+        "remains_percent": coil.remains_percent,
+        "remains_status": coil.remains_status,
+    }
+
+
+@app.route('/api/coils', methods=['GET', 'POST'])
+def api_coils():
+    """GET: Список катушек с фильтрами. POST: Создать катушку."""
+    if request.method == 'GET':
+        filament_id = request.args.get('filament_id', type=int)
+        material_id = request.args.get('material_id', type=int)
+        vendor_id = request.args.get('vendor_id', type=int)
+        archived = request.args.get('archived')
+        include_archived = request.args.get('include_archived', '0') == '1'
+
+        archived_filter = None
+        if archived is not None:
+            archived_filter = archived.lower() in ('true', '1', 'yes')
+
+        coils = db.get_coils(
+            filament_id=filament_id,
+            material_id=material_id,
+            vendor_id=vendor_id,
+            archived=archived_filter,
+            include_archived=include_archived,
+        )
+        return jsonify([serialize_coil(coil) for coil in coils])
+
+    # POST - создание катушки
+    data = request.get_json(force=True, silent=True) or {}
+    # filament_id обязателен, остальное опционально
+    required_fields = ['name', 'filament_id', 'remains']
+    missing = [f for f in required_fields if data.get(f) is None]
+    if missing:
+        return jsonify({"success": False, "message": f"Отсутствуют поля: {', '.join(missing)}"}), 400
+
+    coil = db.add_coil(
+        name=data['name'],
+        filament_id=data['filament_id'],
+        remains=data['remains'],
+        material_id=data.get('material_id'),  # Deprecated
+        vendor_id=data.get('vendor_id'),  # Deprecated
+        spool_weight=data.get('spool_weight'),
+        initial_weight=data.get('initial_weight', data['remains']),
+        color_hex=data.get('color_hex'),
+        price=data.get('price'),
+        location=data.get('location'),
+        lot_nr=data.get('lot_nr'),
+        comment=data.get('comment'),
+    )
+    coil = db.get_coil(coil.id)
+    return jsonify({"success": True, "coil": serialize_coil(coil)})
+
+
+@app.route('/api/coils/<int:coil_id>', methods=['GET', 'PUT', 'PATCH', 'DELETE'])
+def api_coil_detail(coil_id: int):
+    """Операции с конкретной катушкой."""
+    coil = db.get_coil(coil_id)
+    if not coil:
+        return jsonify({"success": False, "message": "Катушка не найдена"}), 404
+
+    if request.method == 'GET':
+        result = serialize_coil(coil)
+        # Добавляем историю для детального просмотра
+        history = db.get_spool_history(coil_id=coil_id, limit=50)
+        result['history'] = [
+            {
+                "id": h.id,
+                "used_weight": h.used_weight,
+                "timestamp": h.timestamp.isoformat() if h.timestamp else None,
+                "notes": h.notes,
+                "task": {"id": h.task.id, "name": h.task.name} if h.task else None,
+            }
+            for h in history
+        ]
+        return jsonify(result)
+
+    if request.method == 'DELETE':
+        if db.delete_coil(coil_id):
+            return jsonify({"success": True})
+        return jsonify({"success": False, "message": "Не удалось удалить катушку"}), 400
+
+    # PUT/PATCH - обновление
+    data = request.get_json(force=True, silent=True) or {}
+    updated = db.update_coil(coil_id, **data)
+    if updated:
+        updated = db.get_coil(coil_id)
+        return jsonify({"success": True, "coil": serialize_coil(updated)})
+    return jsonify({"success": False, "message": "Не удалось обновить катушку"}), 400
+
+
+@app.route('/api/coils/<int:coil_id>/archive', methods=['POST'])
+def api_coil_archive(coil_id: int):
+    """Архивировать катушку."""
+    coil = db.archive_coil(coil_id)
+    if coil:
+        coil = db.get_coil(coil_id)
+        return jsonify({"success": True, "coil": serialize_coil(coil)})
+    return jsonify({"success": False, "message": "Катушка не найдена"}), 404
+
+
+@app.route('/api/coils/<int:coil_id>/unarchive', methods=['POST'])
+def api_coil_unarchive(coil_id: int):
+    """Разархивировать катушку."""
+    coil = db.unarchive_coil(coil_id)
+    if coil:
+        coil = db.get_coil(coil_id)
+        return jsonify({"success": True, "coil": serialize_coil(coil)})
+    return jsonify({"success": False, "message": "Катушка не найдена"}), 404
+
+
+@app.route('/api/coils/<int:coil_id>/adjust', methods=['POST'])
+def api_coil_adjust(coil_id: int):
+    """Ручная корректировка остатка катушки."""
+    data = request.get_json(force=True, silent=True) or {}
+    new_remains = data.get('remains')
+    if new_remains is None:
+        return jsonify({"success": False, "message": "Поле remains обязательно"}), 400
+
+    coil = db.adjust_coil_remains(coil_id, new_remains, notes=data.get('notes'))
+    if coil:
+        coil = db.get_coil(coil_id)
+        return jsonify({"success": True, "coil": serialize_coil(coil)})
+    return jsonify({"success": False, "message": "Катушка не найдена"}), 404
+
+
+@app.route('/api/coils/<int:coil_id>/history')
+def api_coil_history(coil_id: int):
+    """История расхода катушки."""
+    history = db.get_spool_history(coil_id=coil_id)
     return jsonify([
         {
-            "id": coil.id,
-            "name": coil.name,
-            "material": coil.material.name if coil.material else None,
-            "material_id": coil.material.id if coil.material else None,
-            "remains": coil.remains,
+            "id": h.id,
+            "used_weight": h.used_weight,
+            "timestamp": h.timestamp.isoformat() if h.timestamp else None,
+            "notes": h.notes,
+            "task": {"id": h.task.id, "name": h.task.name} if h.task else None,
         }
-        for coil in coils
+        for h in history
     ])
 
 
@@ -834,6 +1009,150 @@ def api_get_materials():
         }
         for material in materials
     ])
+
+
+# === Vendors API ===
+
+@app.route('/api/vendors', methods=['GET', 'POST'])
+def api_vendors():
+    """GET: Список производителей. POST: Создать производителя."""
+    if request.method == 'GET':
+        vendors = db.get_vendors()
+        return jsonify([
+            {
+                "id": v.id,
+                "name": v.name,
+                "comment": v.comment,
+                "empty_spool_weight": v.empty_spool_weight,
+            }
+            for v in vendors
+        ])
+
+    # POST - создание производителя
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get('name'):
+        return jsonify({"success": False, "message": "Поле name обязательно"}), 400
+
+    vendor = db.add_vendor(
+        name=data['name'],
+        comment=data.get('comment'),
+        empty_spool_weight=data.get('empty_spool_weight'),
+    )
+    return jsonify({
+        "success": True,
+        "vendor": {
+            "id": vendor.id,
+            "name": vendor.name,
+            "comment": vendor.comment,
+            "empty_spool_weight": vendor.empty_spool_weight,
+        }
+    })
+
+
+@app.route('/api/vendors/<int:vendor_id>', methods=['GET', 'PUT', 'PATCH', 'DELETE'])
+def api_vendor_detail(vendor_id: int):
+    """Операции с конкретным производителем."""
+    vendor = db.get_vendor(vendor_id)
+    if not vendor:
+        return jsonify({"success": False, "message": "Производитель не найден"}), 404
+
+    if request.method == 'GET':
+        return jsonify({
+            "id": vendor.id,
+            "name": vendor.name,
+            "comment": vendor.comment,
+            "empty_spool_weight": vendor.empty_spool_weight,
+        })
+
+    if request.method == 'DELETE':
+        if db.delete_vendor(vendor_id):
+            return jsonify({"success": True})
+        return jsonify({"success": False, "message": "Не удалось удалить производителя"}), 400
+
+    # PUT/PATCH - обновление
+    data = request.get_json(force=True, silent=True) or {}
+    updated = db.update_vendor(vendor_id, **data)
+    if updated:
+        return jsonify({
+            "success": True,
+            "vendor": {
+                "id": updated.id,
+                "name": updated.name,
+                "comment": updated.comment,
+                "empty_spool_weight": updated.empty_spool_weight,
+            }
+        })
+    return jsonify({"success": False, "message": "Не удалось обновить производителя"}), 400
+
+
+# === Filaments API ===
+
+def serialize_filament(filament):
+    """Сериализация филамента."""
+    return {
+        "id": filament.id,
+        "vendor_id": filament.vendor_id,
+        "vendor_name": filament.vendor.name if filament.vendor else None,
+        "name": filament.name,
+        "material": filament.material,
+        "color_hex": filament.color_hex,
+        "diameter": filament.diameter,
+        "density": filament.density,
+        "weight": filament.weight,
+        "empty_spool_weight": filament.empty_spool_weight,
+        "description": filament.description,
+    }
+
+
+@app.route('/api/filaments', methods=['GET', 'POST'])
+def api_filaments():
+    """Список филаментов или создание нового."""
+    if request.method == 'GET':
+        vendor_id = request.args.get('vendor_id', type=int)
+        material = request.args.get('material')
+        filaments = db.get_filaments(vendor_id=vendor_id, material=material)
+        return jsonify([serialize_filament(f) for f in filaments])
+
+    # POST - создание
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get('name'):
+        return jsonify({"success": False, "message": "Название обязательно"}), 400
+
+    filament = db.add_filament(
+        name=data['name'],
+        vendor_id=data.get('vendor_id'),
+        material=data.get('material'),
+        color_hex=data.get('color_hex'),
+        diameter=data.get('diameter'),
+        density=data.get('density'),
+        weight=data.get('weight'),
+        empty_spool_weight=data.get('empty_spool_weight'),
+        description=data.get('description'),
+    )
+    return jsonify({"success": True, "filament": serialize_filament(filament)})
+
+
+@app.route('/api/filaments/<int:filament_id>', methods=['GET', 'PUT', 'PATCH', 'DELETE'])
+def api_filament_detail(filament_id: int):
+    """Операции с конкретным филаментом."""
+    filament = db.get_filament(filament_id)
+    if not filament:
+        return jsonify({"success": False, "message": "Филамент не найден"}), 404
+
+    if request.method == 'GET':
+        return jsonify(serialize_filament(filament))
+
+    if request.method == 'DELETE':
+        if db.delete_filament(filament_id):
+            return jsonify({"success": True})
+        return jsonify({"success": False, "message": "Не удалось удалить филамент"}), 400
+
+    # PUT/PATCH - обновление
+    data = request.get_json(force=True, silent=True) or {}
+    updated = db.update_filament(filament_id, **data)
+    if updated:
+        return jsonify({"success": True, "filament": serialize_filament(updated)})
+    return jsonify({"success": False, "message": "Не удалось обновить филамент"}), 400
 
 
 @app.route('/api/tasks', methods=['GET', 'POST'])
@@ -875,6 +1194,11 @@ def api_task_detail(task_id: int):
 
     if request.method in ('PUT', 'PATCH'):
         data = request.get_json(force=True, silent=True) or {}
+
+        # Сохраняем старый статус для проверки автосписания
+        old_status = task.status
+        new_status = data.get('status', old_status)
+
         updated_task = db.update_task(
             task_id,
             **{
@@ -896,8 +1220,29 @@ def api_task_detail(task_id: int):
         )
         if not updated_task:
             return jsonify({"success": False, "message": "Не удалось обновить задачу"}), 400
+
+        # Автосписание материала при завершении/отмене задачи
+        deducted_info = None
+        if (new_status in ('completed', 'cancelled') and
+                old_status not in ('completed', 'cancelled')):
+            # Проверяем есть ли катушка и расход материала
+            if task.coil_id and task.estimated_filament and task.estimated_filament > 0:
+                coil = db.get_coil(task.coil_id)
+                if coil:
+                    amount = task.estimated_filament
+                    note = f"Автосписание: задача #{task_id} ({new_status})"
+                    db.deduct_material(task.coil_id, amount, task_id=task_id, notes=note)
+                    deducted_info = {
+                        "coil_id": task.coil_id,
+                        "amount": amount,
+                        "coil_name": coil.name,
+                    }
+
         updated_task = db.get_task(task_id)
-        return jsonify({"success": True, "task": serialize_task(updated_task)})
+        response = {"success": True, "task": serialize_task(updated_task)}
+        if deducted_info:
+            response["material_deducted"] = deducted_info
+        return jsonify(response)
 
     # DELETE
     remove_task_gcode(task)
@@ -981,6 +1326,69 @@ def api_task_gcode(task_id: int):
         return jsonify({"success": False, "message": "Не удалось сохранить данные файла"}), 500
     updated_task = db.get_task(task.id)
     return jsonify({"success": True, "task": serialize_task(updated_task)})
+
+
+@app.route('/api/gcode/parse', methods=['POST'])
+def api_gcode_parse():
+    """
+    Парсит G-code файл и возвращает метаданные без сохранения.
+    Используется для предзаполнения полей при создании задачи.
+    """
+    if 'file' not in request.files:
+        return jsonify({"success": False, "message": "Файл не найден в запросе"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"success": False, "message": "Имя файла пустое"}), 400
+    if not allowed_gcode_file(file.filename):
+        return jsonify({"success": False, "message": "Неподдерживаемый формат файла"}), 400
+
+    # Сохраняем временный файл для парсинга
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.gcode') as tmp:
+        file.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        metadata = parse_gcode_file(tmp_path)
+
+        # Fallback на размер файла если парсинг не дал результатов
+        estimated_filament = metadata.filament_weight_grams
+        estimated_time = metadata.estimated_time_minutes
+        if estimated_filament is None or estimated_time is None:
+            size_kb = os.path.getsize(tmp_path) / 1024
+            if estimated_filament is None:
+                estimated_filament = round(5.0 + size_kb * 0.05, 2)
+            if estimated_time is None:
+                estimated_time = round(30.0 + size_kb * 0.2, 1)
+
+        # Формируем строку слайсера
+        slicer_str = None
+        if metadata.slicer_name:
+            slicer_str = metadata.slicer_name
+            if metadata.slicer_version:
+                slicer_str += f" {metadata.slicer_version}"
+
+        # Извлекаем имя из файла (без расширения) для названия задачи
+        base_name = os.path.splitext(file.filename)[0]
+
+        return jsonify({
+            "success": True,
+            "filename": file.filename,
+            "suggested_name": base_name,
+            "estimated_filament": estimated_filament,
+            "estimated_time_minutes": estimated_time,
+            "layer_count": metadata.layer_count,
+            "layer_height": metadata.layer_height,
+            "nozzle_temp": metadata.nozzle_temp,
+            "bed_temp": metadata.bed_temp,
+            "slicer": slicer_str,
+        })
+    finally:
+        # Удаляем временный файл
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------

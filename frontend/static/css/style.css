@@ -47,6 +47,7 @@ body {
 .sidebar .sidebar-btn[data-route="/printer-control"] { order: 2; }
 .sidebar .sidebar-btn[data-route="/planning"] { order: 3; }
 .sidebar .sidebar-btn[data-route="/maintenance"] { order: 4; }
+.sidebar .sidebar-btn[data-route="/spools"] { order: 5; }
 
 .dashboard {
   margin-left: 220px;
@@ -353,10 +354,10 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
   appearance: none;
   background-image: linear-gradient(45deg, transparent 50%, #cdd0ff 50%),
     linear-gradient(135deg, #cdd0ff 50%, transparent 50%);
-  background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%;
+  background-position: calc(100% - 14px) 50%, calc(100% - 8px) 50%;
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
-  padding-right: 34px;
+  padding-right: 28px;
   cursor: pointer;
 }
 
