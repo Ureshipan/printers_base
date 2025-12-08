@@ -138,6 +138,23 @@
   gap: 8px;
 }
 
+.gcode-file-name {
+  font-weight: 500;
+  color: #e0e2f5;
+  word-break: break-all;
+}
+
+.gcode-meta {
+  font-size: 0.85em;
+  color: #a0a4d0;
+}
+
+.gcode-slicer {
+  font-size: 0.8em;
+  color: #7378b8;
+  font-style: italic;
+}
+
 .action-btn {
   padding: 6px 12px;
   border-radius: 8px;

@@ -27,6 +27,7 @@ if os.path.exists(os.path.join(PROJECT_ROOT, ".env")):
     load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 from backend.db.data_model import DBModel, Coil, Printer, Project, Task, MaintenanceType, MaintenanceRecord  # noqa: E402
+from backend.services.gcode_parser import parse_gcode_file  # noqa: E402
 
 
 app = Flask(
@@ -384,21 +385,6 @@ def get_printer_or_default(printer_id: Optional[int]) -> Optional[Printer]:
     return printers[0] if printers else None
 
 
-def estimate_print_parameters(file_path: str) -> Tuple[float, float]:
-    """
-    Stub function that pretends to parse a G-code file and returns
-    estimated filament usage (grams) and print time (minutes).
-    """
-    try:
-        size_kb = os.path.getsize(file_path) / 1024
-    except OSError:
-        size_kb = 0
-
-    estimated_filament = round(5.0 + size_kb * 0.05, 2)
-    estimated_time = round(30.0 + size_kb * 0.2, 1)
-    return estimated_filament, estimated_time
-
-
 def serialize_task(task: Task) -> Dict:
     return {
         "id": task.id,
@@ -432,6 +418,12 @@ def serialize_task(task: Task) -> Dict:
             "original_name": task.gcode_original_name,
             "uploaded_at": task.gcode_uploaded_at.isoformat() if task.gcode_uploaded_at else None,
             "download_url": url_for('api_task_gcode', task_id=task.id) if task.model_gcode else None,
+            # Метаданные G-code
+            "layer_count": task.gcode_layer_count,
+            "layer_height": task.gcode_layer_height,
+            "nozzle_temp": task.gcode_nozzle_temp,
+            "bed_temp": task.gcode_bed_temp,
+            "slicer": task.gcode_slicer,
         },
     }
 
@@ -950,7 +942,26 @@ def api_task_gcode(task_id: int):
     stored_path = os.path.join(UPLOAD_DIR, stored_name)
     file.save(stored_path)
 
-    estimated_filament, estimated_time = estimate_print_parameters(stored_path)
+    # Парсим метаданные G-code
+    metadata = parse_gcode_file(stored_path)
+
+    # Fallback на размер файла если парсинг не дал результатов
+    estimated_filament = metadata.filament_weight_grams
+    estimated_time = metadata.estimated_time_minutes
+    if estimated_filament is None or estimated_time is None:
+        size_kb = os.path.getsize(stored_path) / 1024
+        if estimated_filament is None:
+            estimated_filament = round(5.0 + size_kb * 0.05, 2)
+        if estimated_time is None:
+            estimated_time = round(30.0 + size_kb * 0.2, 1)
+
+    # Формируем строку слайсера
+    slicer_str = None
+    if metadata.slicer_name:
+        slicer_str = metadata.slicer_name
+        if metadata.slicer_version:
+            slicer_str += f" {metadata.slicer_version}"
+
     updated_task = db.update_task(
         task.id,
         model_gcode=stored_name,
@@ -959,6 +970,12 @@ def api_task_gcode(task_id: int):
         estimated_filament=estimated_filament,
         estimated_time_minutes=estimated_time,
         material_amount=estimated_filament,
+        # Метаданные G-code
+        gcode_layer_count=metadata.layer_count,
+        gcode_layer_height=metadata.layer_height,
+        gcode_nozzle_temp=metadata.nozzle_temp,
+        gcode_bed_temp=metadata.bed_temp,
+        gcode_slicer=slicer_str,
     )
     if not updated_task:
         return jsonify({"success": False, "message": "Не удалось сохранить данные файла"}), 500

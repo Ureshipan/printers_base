@@ -86,6 +86,12 @@ class Task(Base):
     estimated_filament = Column(Float)
     estimated_time_minutes = Column(Float)
     gcode_uploaded_at = Column(DateTime)
+    # Метаданные G-code
+    gcode_layer_count = Column(Integer)
+    gcode_layer_height = Column(Float)
+    gcode_nozzle_temp = Column(Integer)
+    gcode_bed_temp = Column(Integer)
+    gcode_slicer = Column(String)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -167,6 +173,12 @@ class DBModel:
             self._add_column_if_missing(conn, 'tasks', 'gcode_uploaded_at', "DATETIME")
             self._add_column_if_missing(conn, 'tasks', 'created_at', "DATETIME")
             self._add_column_if_missing(conn, 'tasks', 'updated_at', "DATETIME")
+            # Метаданные G-code
+            self._add_column_if_missing(conn, 'tasks', 'gcode_layer_count', "INTEGER")
+            self._add_column_if_missing(conn, 'tasks', 'gcode_layer_height', "FLOAT")
+            self._add_column_if_missing(conn, 'tasks', 'gcode_nozzle_temp', "INTEGER")
+            self._add_column_if_missing(conn, 'tasks', 'gcode_bed_temp', "INTEGER")
+            self._add_column_if_missing(conn, 'tasks', 'gcode_slicer', "TEXT")
             conn.commit()
 
     @staticmethod

@@ -284,9 +284,36 @@ function renderGcodeInfo(task) {
     return '<span style="color:#9094d0">Файл не загружен</span>';
   }
   const name = task.gcode.original_name || task.gcode.download_url.split('/').pop();
+  const gcode = task.gcode;
+
+  // Собираем метаданные для отображения
+  const metaItems = [];
+  if (gcode.layer_count) {
+    metaItems.push(`${gcode.layer_count} слоёв`);
+  }
+  if (gcode.layer_height) {
+    metaItems.push(`${gcode.layer_height} мм`);
+  }
+  if (gcode.nozzle_temp) {
+    metaItems.push(`🔥 ${gcode.nozzle_temp}°`);
+  }
+  if (gcode.bed_temp) {
+    metaItems.push(`🛏️ ${gcode.bed_temp}°`);
+  }
+
+  const metaLine = metaItems.length > 0
+    ? `<div class="gcode-meta">${metaItems.join(' · ')}</div>`
+    : '';
+
+  const slicerLine = gcode.slicer
+    ? `<div class="gcode-slicer">${gcode.slicer}</div>`
+    : '';
+
   return `
     <div class="gcode-info">
-      <span>${name}</span>
+      <div class="gcode-file-name">${name}</div>
+      ${metaLine}
+      ${slicerLine}
       <div class="gcode-links">
         <a href="${task.gcode.download_url}" class="action-btn secondary" data-download>Скачать</a>
         <button class="action-btn destructive" data-remove-gcode data-id="${task.id}">Удалить</button>
