@@ -245,13 +245,6 @@
 
         <div class="form-grid">
           <label>
-            Цвет (переопределить)
-            <div class="color-input-wrapper">
-              <input type="color" name="color_hex" id="colorPicker" value="#FFFFFF">
-              <input type="text" name="color_hex_text" id="colorHexText" placeholder="#FFFFFF" maxlength="7">
-            </div>
-          </label>
-          <label>
             Цена (₽)
             <input type="number" name="price" min="0" step="0.01" placeholder="1500">
           </label>
@@ -366,8 +359,8 @@
             <input type="text" name="name" required placeholder="eSUN, Bestfilament...">
           </label>
           <label>
-            Вес пустой катушки (г)
-            <input type="number" name="empty_spool_weight" min="0" step="0.1" placeholder="200">
+            Вес пустой катушки (г) *
+            <input type="number" name="empty_spool_weight" min="1" step="1" placeholder="200" required>
           </label>
         </div>
         <label class="notes-field">

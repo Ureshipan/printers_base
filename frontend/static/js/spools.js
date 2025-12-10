@@ -516,7 +516,6 @@ document.getElementById('openCoilModal').addEventListener('click', () => {
   coilForm.reset();
   document.getElementById('coilId').value = '';
   document.getElementById('coilModalTitle').textContent = 'Новая катушка';
-  syncColorInputs('colorPicker', 'colorHexText');
   calculatedWeightEl.textContent = '—';
   calculatedWeightEl.classList.remove('calculated');
   resetWeightInputMode(); // Сброс режима ввода весов
@@ -559,7 +558,6 @@ coilForm.addEventListener('submit', async (e) => {
     remains: newRemains,
     initial_weight: filamentWeight,
     spool_weight: formData.get('spool_weight') ? parseFloat(formData.get('spool_weight')) : null,
-    color_hex: formData.get('color_hex_text') || formData.get('color_hex'),
     price: formData.get('price') ? parseFloat(formData.get('price')) : null,
     location: formData.get('location') || null,
     lot_nr: formData.get('lot_nr') || null,
@@ -628,8 +626,6 @@ window.editCoil = function(id) {
   // Рассчитываем и показываем общий вес
   totalWeightInput.value = initialWeight > 0 ? (initialWeight + spoolWeight) : '';
 
-  coilForm.querySelector('[name="color_hex"]').value = coil.color_hex || '#FFFFFF';
-  coilForm.querySelector('[name="color_hex_text"]').value = coil.color_hex || '';
   coilForm.querySelector('[name="price"]').value = coil.price || '';
   coilForm.querySelector('[name="location"]').value = coil.location || '';
   coilForm.querySelector('[name="lot_nr"]').value = coil.lot_nr || '';
@@ -767,9 +763,16 @@ vendorForm.addEventListener('submit', async (e) => {
   const formData = new FormData(vendorForm);
   const vendorId = formData.get('vendor_id');
 
+  // Валидация веса пустой катушки
+  const emptySpoolWeight = formData.get('empty_spool_weight');
+  if (!emptySpoolWeight || parseFloat(emptySpoolWeight) <= 0) {
+    showToast('Укажите вес пустой катушки (больше 0)', 'error');
+    return;
+  }
+
   const data = {
     name: formData.get('name'),
-    empty_spool_weight: formData.get('empty_spool_weight') ? parseFloat(formData.get('empty_spool_weight')) : null,
+    empty_spool_weight: parseFloat(emptySpoolWeight),
     comment: formData.get('comment') || null,
   };
 
@@ -921,8 +924,7 @@ searchFilamentInput.addEventListener('input', () => renderFilamentsTable(filamen
 filterFilamentVendor.addEventListener('change', () => renderFilamentsTable(filamentsData));
 searchVendorInput.addEventListener('input', () => renderVendorsTable(vendorsData));
 
-// Синхронизация цветов при загрузке
-syncColorInputs('colorPicker', 'colorHexText');
+// Синхронизация цветов при загрузке (только для филамента, у катушки цвет берётся от филамента)
 syncColorInputs('filamentColorPicker', 'filamentColorHexText');
 
 // Закрытие модалок по клику на backdrop
