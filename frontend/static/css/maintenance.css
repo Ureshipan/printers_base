@@ -356,7 +356,7 @@
   background: #181828;
   border-radius: 16px;
   padding: 4px;
-  overflow: hidden;
+  overflow-x: auto;
   border: 1px solid rgba(104, 114, 255, 0.16);
 }
 

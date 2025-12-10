@@ -38,19 +38,109 @@ async function fetchTasks() {
 // Глобальный кэш принтеров для редактирования
 let printersDataCache = [];
 
+// Кэш предыдущих статусов и фильтр
+let previousPrinterStatuses = {};
+let showOnlyErrors = false;
+
+// Запрос разрешения на браузерные уведомления
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
+// Проверка на новые ошибки и браузерное уведомление
+function checkForNewErrors(printers) {
+  printers.forEach(p => {
+    const prevStatus = previousPrinterStatuses[p.id];
+    if (p.status === 'error' && prevStatus !== 'error') {
+      // Браузерное уведомление
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Ошибка принтера', {
+          body: `${p.name}: обнаружена ошибка!`,
+          icon: '/static/img/error-icon.png'
+        });
+      }
+    }
+    // Показать модальное окно при завершении печати
+    if (p.status === 'awaiting_removal' && prevStatus !== 'awaiting_removal') {
+      showRemovalModal(p.id, p.name);
+    }
+    previousPrinterStatuses[p.id] = p.status;
+  });
+}
+
+// Подтверждение уборки детали со стола
+async function confirmRemoval(printerId) {
+  try {
+    const response = await fetch(`/api/printers/${printerId}/confirm-removal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await response.json();
+    if (data.success) {
+      // Перезагрузить список принтеров
+      const printers = await fetchPrinters();
+      renderPrinters(printers);
+      // Закрыть модальное окно если открыто
+      closeRemovalModal();
+    }
+  } catch (error) {
+    console.error('Ошибка при подтверждении уборки:', error);
+  }
+}
+
+// Модальное окно подтверждения уборки
+let pendingRemovalPrinterId = null;
+
+function showRemovalModal(printerId, printerName) {
+  pendingRemovalPrinterId = printerId;
+  const modal = document.getElementById('removalModal');
+  const nameEl = document.getElementById('removalPrinterName');
+  if (modal && nameEl) {
+    nameEl.textContent = printerName;
+    modal.classList.add('open');
+  }
+}
+
+function closeRemovalModal() {
+  const modal = document.getElementById('removalModal');
+  if (modal) modal.classList.remove('open');
+  pendingRemovalPrinterId = null;
+}
+
+function submitRemovalConfirm() {
+  if (pendingRemovalPrinterId) {
+    confirmRemoval(pendingRemovalPrinterId);
+  }
+}
+
 // Функция для рендеринга карточек принтеров
 function renderPrinters(printers) {
   printersDataCache = printers; // Сохраняем для редактирования
+
+  // Проверка на новые ошибки и завершение печати
+  checkForNewErrors(printers);
+
   const printersGrid = document.getElementById('printersGrid');
   printersGrid.innerHTML = '';
-  if (!printers.length) {
-    printersGrid.innerHTML = '<div style="color:#8f94d1">Принтеры не найдены</div>';
-    updatePrinterStats([]);
+
+  // Применяем фильтр если включен
+  let displayPrinters = printers;
+  if (showOnlyErrors) {
+    displayPrinters = printers.filter(p => p.status === 'error');
+  }
+
+  if (!displayPrinters.length) {
+    printersGrid.innerHTML = showOnlyErrors
+      ? '<div style="color:#8f94d1">Нет принтеров с ошибками</div>'
+      : '<div style="color:#8f94d1">Принтеры не найдены</div>';
+    updatePrinterStats(printers); // Статистика по всем принтерам
     return;
   }
 
-  printers.forEach(p => {
+  displayPrinters.forEach(p => {
     const isOffline = p.status === 'offline';
+    const isError = p.status === 'error';
+    const isAwaitingRemoval = p.status === 'awaiting_removal';
 
     let statusClass = '';
     if (p.status === 'work') statusClass = 'status-work';
@@ -58,6 +148,7 @@ function renderPrinters(printers) {
     else if (p.status === 'error') statusClass = 'status-error';
     else if (p.status === 'service') statusClass = 'status-service';
     else if (p.status === 'offline') statusClass = 'status-offline';
+    else if (p.status === 'awaiting_removal') statusClass = 'status-awaiting_removal';
 
     let progClass = '';
     if (p.status === 'work') progClass = 'progress-work';
@@ -71,13 +162,22 @@ function renderPrinters(printers) {
       p.status === 'idle' ? 'Простаивает' :
       p.status === 'error' ? 'Ошибка' :
       p.status === 'offline' ? 'Нет связи' :
+      p.status === 'awaiting_removal' ? 'Ожидает уборки' :
       'Тех. осмотр';
 
     const needsMaintenance = p.needs_maintenance || false;
     let cardClass = isOffline ? 'printer-card offline' : 'printer-card';
     if (needsMaintenance && !isOffline) cardClass += ' needs-maintenance';
+    if (isError) cardClass += ' has-error';
+    if (isAwaitingRemoval) cardClass += ' awaiting-removal';
+
     const offlineBadge = isOffline ? '<span class="offline-badge">⚠ НЕТ СВЯЗИ</span>' : '';
     const maintenanceBadge = (needsMaintenance && !isOffline) ? '<span class="maintenance-badge">🔧 ОБСЛУЖИВАНИЕ</span>' : '';
+
+    // Кнопка подтверждения уборки детали
+    const removalButton = isAwaitingRemoval
+      ? `<button class="confirm-removal-btn" onclick="event.stopPropagation(); confirmRemoval(${p.id})">✓ Деталь убрана</button>`
+      : '';
 
     printersGrid.innerHTML += `
       <div class="${cardClass}">
@@ -89,17 +189,18 @@ function renderPrinters(printers) {
             <span class="printer-icon">🖨️</span>
             <span>${p.name}</span>
           </div>
-          <div class="printer-prop">Материал - ${p.material}</div>
+          <div class="printer-prop">Материал - ${p.material} | Сопло ${p.nozzle_diameter || 0.4} мм</div>
           <div class="printer-prop">Текущая модель - ${isOffline ? '—' : p.model}</div>
           <div class="printer-prop printer-status ${statusClass}">${statusText}</div>
           <div class="progress-bar"><div class="progress-inner ${progClass}" style="width:${p.percent}%"></div></div>
           <div class="printer-prop">Обслужен: ${p.lastServed}</div>
+          ${removalButton}
         </div>
       </div>
     `;
   });
 
-  updatePrinterStats(printers);
+  updatePrinterStats(printers); // Статистика по всем принтерам
 }
 
 function updatePrinterStats(printers) {
@@ -141,7 +242,7 @@ function renderMaterials(coils) {
         <td>${c.name}</td>
         <td>${c.material || '—'}</td>
         <td>—</td>
-        <td>${c.remains ?? '—'}</td>
+        <td>${c.remains != null ? parseFloat(c.remains).toFixed(1) : '—'}</td>
         <td>—</td>
       </tr>
     `;
@@ -412,6 +513,30 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (confirmDeleteBtn) {
     confirmDeleteBtn.addEventListener('click', confirmDeletePrinter);
   }
+
+  // Обработчик фильтра "Только с ошибками"
+  const filterErrorsBtn = document.getElementById('filterErrorsBtn');
+  if (filterErrorsBtn) {
+    filterErrorsBtn.addEventListener('click', () => {
+      showOnlyErrors = !showOnlyErrors;
+      filterErrorsBtn.classList.toggle('active', showOnlyErrors);
+      filterErrorsBtn.textContent = showOnlyErrors ? '✕ Показать все' : '⚠️ Только ошибки';
+      renderPrinters(printersDataCache);
+    });
+  }
+
+  // Обработчики модального окна подтверждения уборки
+  const closeRemovalBtn = document.getElementById('closeRemovalBtn');
+  const cancelRemovalBtn = document.getElementById('cancelRemovalBtn');
+  const confirmRemovalBtn = document.getElementById('confirmRemovalBtn');
+
+  [closeRemovalBtn, cancelRemovalBtn].forEach(btn => {
+    if (btn) btn.addEventListener('click', closeRemovalModal);
+  });
+
+  if (confirmRemovalBtn) {
+    confirmRemovalBtn.addEventListener('click', submitRemovalConfirm);
+  }
 });
 
 // Переменная для хранения данных редактируемого принтера
@@ -445,6 +570,9 @@ function openEditPrinterModal(printerId) {
     // Для реальных принтеров нужно получить данные из API
     fetchPrinterDetails(printerId);
   }
+
+  // Устанавливаем значение сопла из кэша
+  document.getElementById('editPrinterNozzle').value = printer.nozzle_diameter || 0.4;
 
   document.getElementById('editPrinterModal').classList.add('open');
 }
@@ -487,6 +615,10 @@ async function submitEditPrinter() {
   }
 
   const payload = { name };
+
+  // Диаметр сопла для всех принтеров
+  const nozzle = parseFloat(document.getElementById('editPrinterNozzle').value) || 0.4;
+  payload.nozzle_diameter = nozzle;
 
   if (currentEditPrinter && currentEditPrinter.is_virtual) {
     payload.status = document.getElementById('editPrinterStatus').value;

@@ -59,11 +59,13 @@ http = requests.Session()
 printer_states: Dict[int, Dict] = {}
 printer_state_lock = threading.Lock()
 
+# Примечание: статус подтверждения уборки хранится в БД (Printer.removal_confirmed)
+
 STATE_MAP = {
     "printing": "work",
     "paused": "idle",
     "standby": "idle",
-    "complete": "idle",
+    "complete": "awaiting_removal",  # Требует подтверждения уборки детали
     "error": "error",
     "offline": "offline",
     "ready": "idle",
@@ -391,7 +393,7 @@ def monitor_printing_tasks():
         if not task.printer_id:
             continue
 
-        printer = db.get_printer(task.printer_id)
+        printer = db.get_printer_by_id(task.printer_id)
         if not printer or printer.is_virtual:
             continue
 
@@ -666,6 +668,17 @@ def cancel_print_on_printer(printer: Printer) -> Tuple[bool, str]:
     """Отмена печати на принтере."""
     base_url = build_base_url(printer)
     try:
+        # Сначала очищаем состояние паузы (если есть) чтобы избежать
+        # ошибки "Unknown g-code state: PAUSE_state" при отмене из паузы
+        try:
+            http.post(
+                f"{base_url}/printer/gcode/script",
+                json={"script": "CLEAR_PAUSE"},
+                timeout=5
+            )
+        except requests.RequestException:
+            pass  # Игнорируем ошибку - команда может не поддерживаться
+
         response = http.post(f"{base_url}/printer/print/cancel", timeout=10)
         response.raise_for_status()
         return True, "ok"
@@ -736,7 +749,19 @@ def api_printers():
         with printer_state_lock:
             for printer in printers:
                 state = printer_states.get(printer.id, build_default_state())
-                mapped_status = STATE_MAP.get(state["status"], state["status"])
+                raw_status = state["status"]
+                mapped_status = STATE_MAP.get(raw_status, raw_status)
+
+                # Логика подтверждения уборки детали (проверяем БД)
+                if mapped_status == "awaiting_removal":
+                    if getattr(printer, 'removal_confirmed', False):
+                        # Уборка подтверждена - показываем idle
+                        mapped_status = "idle"
+                else:
+                    # Статус изменился - сбрасываем подтверждение для следующей печати
+                    if getattr(printer, 'removal_confirmed', False):
+                        db.update_printer(printer.id, removal_confirmed=False)
+
                 # Проверяем статус обслуживания
                 maintenance_status = db.get_printer_maintenance_status(printer.id)
                 needs_maintenance = maintenance_status.get('needs_maintenance', False)
@@ -753,6 +778,7 @@ def api_printers():
                     "is_virtual": getattr(printer, "is_virtual", False),
                     "needs_maintenance": needs_maintenance,
                     "print_hours": getattr(printer, "print_hours", 0.0) or 0.0,
+                    "nozzle_diameter": getattr(printer, "nozzle_diameter", 0.4) or 0.4,
                 })
         return jsonify(result)
 
@@ -818,6 +844,22 @@ def api_add_virtual_printer():
     })
 
 
+@app.route('/api/printers/<int:printer_id>/confirm-removal', methods=['POST'])
+def api_printer_confirm_removal(printer_id: int):
+    """Подтверждение уборки детали со стола после завершения печати."""
+    printer = db.get_printer_by_id(printer_id)
+    if not printer:
+        return jsonify({"success": False, "message": "Принтер не найден"}), 404
+
+    # Сохраняем подтверждение в БД
+    db.update_printer(printer_id, removal_confirmed=True)
+
+    return jsonify({
+        "success": True,
+        "message": f"Уборка детали подтверждена для принтера {printer.name}"
+    })
+
+
 @app.route('/api/printers/<int:printer_id>', methods=['GET', 'PUT', 'DELETE'])
 def api_printer_detail(printer_id: int):
     printer = db.get_printer_by_id(printer_id)
@@ -835,6 +877,7 @@ def api_printer_detail(printer_id: int):
                 "moonraker_printer": printer.moonraker_printer,
                 "is_virtual": getattr(printer, "is_virtual", False),
                 "status": getattr(printer, "virtual_status", None),
+                "nozzle_diameter": getattr(printer, "nozzle_diameter", 0.4) or 0.4,
             }
         })
 
@@ -867,6 +910,15 @@ def api_printer_detail(printer_id: int):
                     updates['moonraker_port'] = int(data.get('port'))
                 except (TypeError, ValueError):
                     pass
+
+        # Диаметр сопла можно менять для любого принтера
+        if 'nozzle_diameter' in data:
+            try:
+                nozzle = float(data.get('nozzle_diameter'))
+                if 0.1 <= nozzle <= 2.0:  # Разумный диапазон
+                    updates['nozzle_diameter'] = nozzle
+            except (TypeError, ValueError):
+                pass
 
         if not updates:
             return jsonify({"success": False, "message": "Нет данных для обновления"}), 400
@@ -1673,7 +1725,7 @@ def api_task_print_start(task_id: int):
     if not task.printer_id:
         return jsonify({"success": False, "message": "Принтер не назначен"}), 400
 
-    printer = db.get_printer(task.printer_id)
+    printer = db.get_printer_by_id(task.printer_id)
     if not printer:
         return jsonify({"success": False, "message": "Принтер не найден"}), 404
 
@@ -1733,7 +1785,7 @@ def api_task_print_pause(task_id: int):
     if task.status != 'printing':
         return jsonify({"success": False, "message": "Задача не печатается"}), 400
 
-    printer = db.get_printer(task.printer_id)
+    printer = db.get_printer_by_id(task.printer_id)
     if not printer:
         return jsonify({"success": False, "message": "Принтер не найден"}), 404
 
@@ -1756,7 +1808,7 @@ def api_task_print_resume(task_id: int):
     if task.status != 'paused':
         return jsonify({"success": False, "message": "Задача не на паузе"}), 400
 
-    printer = db.get_printer(task.printer_id)
+    printer = db.get_printer_by_id(task.printer_id)
     if not printer:
         return jsonify({"success": False, "message": "Принтер не найден"}), 404
 
@@ -1779,7 +1831,7 @@ def api_task_print_cancel(task_id: int):
     if task.status not in ('printing', 'paused'):
         return jsonify({"success": False, "message": "Задача не печатается и не на паузе"}), 400
 
-    printer = db.get_printer(task.printer_id)
+    printer = db.get_printer_by_id(task.printer_id)
     if not printer:
         return jsonify({"success": False, "message": "Принтер не найден"}), 404
 

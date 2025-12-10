@@ -17,6 +17,7 @@
     <section class="printers-section">
       <div class="section-header">
         <h2>Принтеры</h2>
+        <button class="filter-btn" id="filterErrorsBtn">⚠️ Только ошибки</button>
         <button class="primary-btn" id="openAddPrinterBtn">+ Добавить принтер</button>
         <button class="secondary-btn" id="openAddVirtualBtn">+ Виртуальный</button>
       </div>
@@ -158,6 +159,16 @@
             <option value="offline">Офлайн</option>
           </select>
         </label>
+        <label class="modal-field" id="editPrinterNozzleField">
+          <span>Диаметр сопла (мм)</span>
+          <select id="editPrinterNozzle">
+            <option value="0.2">0.2</option>
+            <option value="0.4">0.4</option>
+            <option value="0.6">0.6</option>
+            <option value="0.8">0.8</option>
+            <option value="1.0">1.0</option>
+          </select>
+        </label>
         <div class="modal-error" id="editPrinterError" role="alert"></div>
         <div class="modal-actions">
           <button type="button" class="danger-btn" id="deletePrinterBtn">Удалить</button>
@@ -165,6 +176,24 @@
           <button type="submit" class="primary-btn">Сохранить</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно подтверждения уборки детали -->
+  <div class="modal-overlay" id="removalModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Печать завершена!</h3>
+        <button class="icon-btn" id="closeRemovalBtn" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Принтер <strong id="removalPrinterName"></strong> завершил печать.</p>
+        <p style="color: #ff9800;">Пожалуйста, уберите деталь со стола и подтвердите.</p>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelRemovalBtn">Позже</button>
+          <button type="button" class="primary-btn" id="confirmRemovalBtn">✓ Деталь убрана</button>
+        </div>
+      </div>
     </div>
   </div>
 

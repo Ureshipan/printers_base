@@ -244,7 +244,7 @@ function renderCoilsTable(coils) {
             <div class="remains-bar-track">
               <div class="remains-bar-fill status-${remainsStatus}" style="width: ${remainsPercent}%"></div>
             </div>
-            <span class="remains-text">${coil.remains ?? 0} г (${remainsPercent}%)</span>
+            <span class="remains-text">${(coil.remains ?? 0).toFixed(1)} г (${remainsPercent}%)</span>
           </div>
         </td>
         <td>${coil.location || '—'}</td>

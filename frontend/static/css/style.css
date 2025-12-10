@@ -73,6 +73,7 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
   align-items: center;
   justify-content: space-between;
   gap: 14px;
+  margin-bottom: 16px;
 }
 .primary-btn, .secondary-btn {
   border: none;
@@ -94,6 +95,21 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
   border: 1px solid #2f2f4d;
 }
 .secondary-btn:hover { background: #22223a; }
+.filter-btn {
+  border: 1px solid #ff4488;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s ease;
+  background: transparent;
+  color: #ff4488;
+}
+.filter-btn:hover { background: rgba(255, 68, 136, 0.15); }
+.filter-btn.active {
+  background: #ff4488;
+  color: #fff;
+}
 .icon-btn {
   background: transparent;
   border: none;
@@ -174,6 +190,38 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
 .status-error { color: #ff4488; }
 .status-service { color: #e162e7; }
 .status-offline { color: #888899; }
+.status-awaiting_removal { color: #ff9800; }
+
+/* Анимация для карточек с ошибками */
+@keyframes error-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 68, 136, 0.7); }
+  50% { box-shadow: 0 0 20px 5px rgba(255, 68, 136, 0.5); }
+}
+.printer-card.has-error {
+  animation: error-pulse 1.5s ease-in-out infinite;
+  border: 2px solid #ff4488;
+}
+
+/* Стили для карточки "Ожидает уборки" - без желтой рамки */
+.printer-card.awaiting-removal {
+  /* Убрана желтая рамка по запросу пользователя */
+}
+.printer-card.awaiting-removal .confirm-removal-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background: linear-gradient(120deg, #ff9800 0%, #ffc107 100%);
+  color: #1a1a2d;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.printer-card.awaiting-removal .confirm-removal-btn:hover {
+  transform: translateY(-2px);
+}
 
 /* Стили для offline карточки принтера */
 .printer-card.offline {
