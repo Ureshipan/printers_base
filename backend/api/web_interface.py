@@ -373,7 +373,150 @@ def update_printer_states_loop():
             with printer_state_lock:
                 printer_states[printer.id] = state
 
+        # Мониторинг печатающихся задач
+        try:
+            monitor_printing_tasks()
+        except Exception as exc:
+            app.logger.error("Ошибка мониторинга печатающихся задач: %s", exc)
+
         time.sleep(PRINTER_STATE_INTERVAL)
+
+
+def monitor_printing_tasks():
+    """Отслеживание прогресса печатающихся задач и обновление данных."""
+    # Получаем задачи в статусе printing или paused
+    printing_tasks = db.get_tasks_by_status(['printing', 'paused'])
+
+    for task in printing_tasks:
+        if not task.printer_id:
+            continue
+
+        printer = db.get_printer(task.printer_id)
+        if not printer or printer.is_virtual:
+            continue
+
+        # Получаем статус печати с принтера
+        print_status = get_printer_print_status(printer)
+        if not print_status:
+            continue
+
+        print_stats = print_status.get('print_stats', {})
+        virtual_sdcard = print_status.get('virtual_sdcard', {})
+
+        moonraker_state = print_stats.get('state', '')
+        moonraker_filename = print_stats.get('filename', '')
+        progress = virtual_sdcard.get('progress', 0)
+        filament_used = print_stats.get('filament_used')  # в мм
+        print_duration = print_stats.get('print_duration')  # в секундах
+
+        # Проверяем что это наша задача (по имени файла)
+        if task.moonraker_filename and moonraker_filename:
+            # Moonraker может возвращать полный путь или только имя файла
+            task_filename = os.path.basename(task.moonraker_filename)
+            current_filename = os.path.basename(moonraker_filename)
+            if task_filename != current_filename:
+                # Это другой файл, возможно печать была остановлена вручную
+                continue
+
+        # Обновляем прогресс задачи
+        progress_percent = int(progress * 100)
+        if progress_percent != task.progress:
+            db.update_task(task.id, progress=progress_percent)
+
+        # Обработка завершения печати
+        if moonraker_state == 'complete':
+            handle_print_complete(task, printer, filament_used, print_duration)
+        elif moonraker_state == 'error':
+            handle_print_error(task, printer, filament_used, print_duration)
+        elif moonraker_state == 'cancelled':
+            # Печать отменена напрямую через Moonraker (не через наш API)
+            handle_print_cancelled(task, printer, filament_used, print_duration)
+        elif moonraker_state == 'paused' and task.status == 'printing':
+            # Пауза была выполнена напрямую через Moonraker
+            db.update_task(task.id, status='paused')
+        elif moonraker_state == 'printing' and task.status == 'paused':
+            # Возобновление было выполнено напрямую через Moonraker
+            db.update_task(task.id, status='printing')
+
+
+def handle_print_complete(task: Task, printer: Printer, filament_used: Optional[float], print_duration: Optional[float]):
+    """Обработка успешного завершения печати."""
+    actual_time_minutes = print_duration / 60 if print_duration else None
+
+    # Обновляем время работы принтера
+    if actual_time_minutes and actual_time_minutes > 0:
+        current_hours = printer.print_hours or 0
+        db.update_printer(printer.id, print_hours=current_hours + (actual_time_minutes / 60))
+
+    # Обновляем задачу
+    db.update_task(
+        task.id,
+        status='completed',
+        progress=100,
+        actual_filament_used=filament_used,
+        actual_print_time=actual_time_minutes,
+        time_end=datetime.now(timezone.utc).isoformat(),
+    )
+
+    # Автосписание материала
+    if task.coil_id and task.estimated_filament and task.estimated_filament > 0:
+        coil = db.get_coil(task.coil_id)
+        if coil:
+            amount = task.estimated_filament
+            note = f"Автосписание: задача #{task.id} (completed)"
+            db.deduct_material(task.coil_id, amount, task_id=task.id, notes=note)
+
+    app.logger.info("Печать задачи #%s завершена успешно", task.id)
+
+
+def handle_print_error(task: Task, printer: Printer, filament_used: Optional[float], print_duration: Optional[float]):
+    """Обработка ошибки печати."""
+    actual_time_minutes = print_duration / 60 if print_duration else None
+
+    # Обновляем время работы принтера
+    if actual_time_minutes and actual_time_minutes > 0:
+        current_hours = printer.print_hours or 0
+        db.update_printer(printer.id, print_hours=current_hours + (actual_time_minutes / 60))
+
+    db.update_task(
+        task.id,
+        status='cancelled',
+        actual_filament_used=filament_used,
+        actual_print_time=actual_time_minutes,
+        time_end=datetime.now(timezone.utc).isoformat(),
+        notes=(task.notes or '') + '\n[Ошибка печати]',
+    )
+
+    app.logger.warning("Печать задачи #%s завершилась с ошибкой", task.id)
+
+
+def handle_print_cancelled(task: Task, printer: Printer, filament_used: Optional[float], print_duration: Optional[float]):
+    """Обработка отмены печати (напрямую через Moonraker)."""
+    actual_time_minutes = print_duration / 60 if print_duration else None
+
+    # Обновляем время работы принтера
+    if actual_time_minutes and actual_time_minutes > 0:
+        current_hours = printer.print_hours or 0
+        db.update_printer(printer.id, print_hours=current_hours + (actual_time_minutes / 60))
+
+    db.update_task(
+        task.id,
+        status='cancelled',
+        actual_filament_used=filament_used,
+        actual_print_time=actual_time_minutes,
+        time_end=datetime.now(timezone.utc).isoformat(),
+    )
+
+    # Частичное списание материала при отмене
+    if task.coil_id and filament_used and filament_used > 0:
+        coil = db.get_coil(task.coil_id)
+        if coil:
+            # Конвертируем мм в граммы (примерно для PLA 1.75мм)
+            amount_grams = filament_used / 1000 * 2.98
+            note = f"Частичное списание при отмене: задача #{task.id}"
+            db.deduct_material(task.coil_id, amount_grams, task_id=task.id, notes=note)
+
+    app.logger.info("Печать задачи #%s отменена", task.id)
 
 
 def get_printer_or_default(printer_id: Optional[int]) -> Optional[Printer]:
@@ -425,6 +568,10 @@ def serialize_task(task: Task) -> Dict:
             "bed_temp": task.gcode_bed_temp,
             "slicer": task.gcode_slicer,
         },
+        # Данные печати
+        "moonraker_filename": task.moonraker_filename,
+        "actual_filament_used": task.actual_filament_used,
+        "actual_print_time": task.actual_print_time,
     }
 
 
@@ -445,6 +592,109 @@ def remove_task_gcode(task: Task):
         estimated_filament=None,
         estimated_time_minutes=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Moonraker Print Control Functions
+# ---------------------------------------------------------------------------
+def upload_gcode_to_printer(printer: Printer, local_file_path: str, filename: str) -> Tuple[bool, str]:
+    """
+    Загрузка G-code файла на принтер через Moonraker API.
+    Возвращает (success, message/uploaded_filename).
+    """
+    base_url = build_base_url(printer)
+    url = f"{base_url}/server/files/upload"
+
+    try:
+        with open(local_file_path, 'rb') as f:
+            files = {'file': (filename, f, 'application/octet-stream')}
+            data = {'root': 'gcodes'}
+            response = http.post(url, files=files, data=data, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            uploaded_path = result.get('item', {}).get('path', filename)
+            return True, uploaded_path
+    except requests.RequestException as exc:
+        app.logger.error("Ошибка загрузки G-code на принтер %s: %s", printer.id, exc)
+        return False, str(exc)
+    except Exception as exc:
+        app.logger.error("Ошибка при загрузке файла: %s", exc)
+        return False, str(exc)
+
+
+def start_print_on_printer(printer: Printer, filename: str) -> Tuple[bool, str]:
+    """
+    Запуск печати файла на принтере через Moonraker API.
+    """
+    base_url = build_base_url(printer)
+    url = f"{base_url}/printer/print/start"
+
+    try:
+        response = http.post(url, params={'filename': filename}, timeout=10)
+        response.raise_for_status()
+        return True, "ok"
+    except requests.RequestException as exc:
+        app.logger.error("Ошибка запуска печати на принтере %s: %s", printer.id, exc)
+        return False, str(exc)
+
+
+def pause_print_on_printer(printer: Printer) -> Tuple[bool, str]:
+    """Пауза печати на принтере."""
+    base_url = build_base_url(printer)
+    try:
+        response = http.post(f"{base_url}/printer/print/pause", timeout=10)
+        response.raise_for_status()
+        return True, "ok"
+    except requests.RequestException as exc:
+        app.logger.error("Ошибка паузы печати на принтере %s: %s", printer.id, exc)
+        return False, str(exc)
+
+
+def resume_print_on_printer(printer: Printer) -> Tuple[bool, str]:
+    """Возобновление печати на принтере."""
+    base_url = build_base_url(printer)
+    try:
+        response = http.post(f"{base_url}/printer/print/resume", timeout=10)
+        response.raise_for_status()
+        return True, "ok"
+    except requests.RequestException as exc:
+        app.logger.error("Ошибка возобновления печати на принтере %s: %s", printer.id, exc)
+        return False, str(exc)
+
+
+def cancel_print_on_printer(printer: Printer) -> Tuple[bool, str]:
+    """Отмена печати на принтере."""
+    base_url = build_base_url(printer)
+    try:
+        response = http.post(f"{base_url}/printer/print/cancel", timeout=10)
+        response.raise_for_status()
+        return True, "ok"
+    except requests.RequestException as exc:
+        app.logger.error("Ошибка отмены печати на принтере %s: %s", printer.id, exc)
+        return False, str(exc)
+
+
+def get_printer_print_status(printer: Printer) -> Optional[Dict]:
+    """
+    Получить статус печати с принтера.
+    Возвращает данные print_stats и virtual_sdcard.
+    """
+    base_url = build_base_url(printer)
+    url = f"{base_url}/printer/objects/query"
+    payload = {
+        "objects": {
+            "print_stats": None,
+            "virtual_sdcard": None,
+        }
+    }
+    try:
+        response = http.post(url, json=payload, timeout=5)
+        response.raise_for_status()
+        result = response.json().get('result', {})
+        return result.get('status', {})
+    except requests.RequestException as exc:
+        app.logger.warning("Ошибка получения статуса печати принтера %s: %s", printer.id, exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -1033,6 +1283,11 @@ def api_vendors():
     if not data.get('name'):
         return jsonify({"success": False, "message": "Поле name обязательно"}), 400
 
+    # Валидация веса пустой катушки
+    empty_weight = data.get('empty_spool_weight')
+    if empty_weight is None or float(empty_weight) <= 0:
+        return jsonify({"success": False, "message": "Вес пустой катушки обязателен и должен быть больше 0"}), 400
+
     vendor = db.add_vendor(
         name=data['name'],
         comment=data.get('comment'),
@@ -1071,6 +1326,13 @@ def api_vendor_detail(vendor_id: int):
 
     # PUT/PATCH - обновление
     data = request.get_json(force=True, silent=True) or {}
+
+    # Валидация веса пустой катушки при обновлении
+    if 'empty_spool_weight' in data:
+        empty_weight = data.get('empty_spool_weight')
+        if empty_weight is None or float(empty_weight) <= 0:
+            return jsonify({"success": False, "message": "Вес пустой катушки должен быть больше 0"}), 400
+
     updated = db.update_vendor(vendor_id, **data)
     if updated:
         return jsonify({
@@ -1389,6 +1651,183 @@ def api_gcode_parse():
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Routes - Print Control API
+# ---------------------------------------------------------------------------
+@app.route('/api/tasks/<int:task_id>/print/start', methods=['POST'])
+def api_task_print_start(task_id: int):
+    """Запуск печати задачи на принтере."""
+    task = db.get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": "Задача не найдена"}), 404
+
+    # Проверки перед запуском
+    if task.status not in ('pending', 'queued'):
+        return jsonify({"success": False, "message": f"Нельзя запустить задачу в статусе '{task.status}'"}), 400
+
+    if not task.model_gcode:
+        return jsonify({"success": False, "message": "G-code файл не загружен"}), 400
+
+    if not task.printer_id:
+        return jsonify({"success": False, "message": "Принтер не назначен"}), 400
+
+    printer = db.get_printer(task.printer_id)
+    if not printer:
+        return jsonify({"success": False, "message": "Принтер не найден"}), 404
+
+    if printer.is_virtual:
+        return jsonify({"success": False, "message": "Нельзя печатать на виртуальном принтере"}), 400
+
+    # Проверяем состояние принтера
+    with printer_state_lock:
+        state = printer_states.get(printer.id, build_default_state())
+
+    if state.get("status") == "offline":
+        return jsonify({"success": False, "message": "Принтер недоступен"}), 400
+
+    if state.get("status") == "printing":
+        return jsonify({"success": False, "message": "Принтер уже печатает"}), 400
+
+    # Путь к локальному файлу
+    local_file_path = os.path.join(UPLOAD_DIR, task.model_gcode)
+    if not os.path.exists(local_file_path):
+        return jsonify({"success": False, "message": "Локальный файл G-code не найден"}), 404
+
+    # Имя файла для загрузки на принтер
+    upload_filename = task.gcode_original_name or os.path.basename(task.model_gcode)
+
+    # Загружаем файл на принтер
+    success, result = upload_gcode_to_printer(printer, local_file_path, upload_filename)
+    if not success:
+        return jsonify({"success": False, "message": f"Ошибка загрузки файла: {result}"}), 500
+
+    moonraker_filename = result  # Имя файла на принтере
+
+    # Запускаем печать
+    success, msg = start_print_on_printer(printer, moonraker_filename)
+    if not success:
+        return jsonify({"success": False, "message": f"Ошибка запуска печати: {msg}"}), 500
+
+    # Обновляем задачу
+    db.update_task(
+        task_id,
+        status='printing',
+        moonraker_filename=moonraker_filename,
+        progress=0,
+        time_start=datetime.now(timezone.utc).isoformat(),
+    )
+
+    updated_task = db.get_task(task_id)
+    return jsonify({"success": True, "task": serialize_task(updated_task)})
+
+
+@app.route('/api/tasks/<int:task_id>/print/pause', methods=['POST'])
+def api_task_print_pause(task_id: int):
+    """Пауза печати задачи."""
+    task = db.get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": "Задача не найдена"}), 404
+
+    if task.status != 'printing':
+        return jsonify({"success": False, "message": "Задача не печатается"}), 400
+
+    printer = db.get_printer(task.printer_id)
+    if not printer:
+        return jsonify({"success": False, "message": "Принтер не найден"}), 404
+
+    success, msg = pause_print_on_printer(printer)
+    if not success:
+        return jsonify({"success": False, "message": f"Ошибка паузы: {msg}"}), 500
+
+    db.update_task(task_id, status='paused')
+    updated_task = db.get_task(task_id)
+    return jsonify({"success": True, "task": serialize_task(updated_task)})
+
+
+@app.route('/api/tasks/<int:task_id>/print/resume', methods=['POST'])
+def api_task_print_resume(task_id: int):
+    """Возобновление печати задачи."""
+    task = db.get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": "Задача не найдена"}), 404
+
+    if task.status != 'paused':
+        return jsonify({"success": False, "message": "Задача не на паузе"}), 400
+
+    printer = db.get_printer(task.printer_id)
+    if not printer:
+        return jsonify({"success": False, "message": "Принтер не найден"}), 404
+
+    success, msg = resume_print_on_printer(printer)
+    if not success:
+        return jsonify({"success": False, "message": f"Ошибка возобновления: {msg}"}), 500
+
+    db.update_task(task_id, status='printing')
+    updated_task = db.get_task(task_id)
+    return jsonify({"success": True, "task": serialize_task(updated_task)})
+
+
+@app.route('/api/tasks/<int:task_id>/print/cancel', methods=['POST'])
+def api_task_print_cancel(task_id: int):
+    """Отмена печати задачи."""
+    task = db.get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": "Задача не найдена"}), 404
+
+    if task.status not in ('printing', 'paused'):
+        return jsonify({"success": False, "message": "Задача не печатается и не на паузе"}), 400
+
+    printer = db.get_printer(task.printer_id)
+    if not printer:
+        return jsonify({"success": False, "message": "Принтер не найден"}), 404
+
+    # Отменяем печать на принтере
+    success, msg = cancel_print_on_printer(printer)
+    if not success:
+        return jsonify({"success": False, "message": f"Ошибка отмены: {msg}"}), 500
+
+    # Получаем фактические данные печати перед отменой
+    print_status = get_printer_print_status(printer)
+    actual_filament = None
+    actual_time = None
+    if print_status:
+        print_stats = print_status.get('print_stats', {})
+        actual_filament = print_stats.get('filament_used')  # в мм
+        print_duration = print_stats.get('print_duration')  # в секундах
+        if print_duration:
+            actual_time = print_duration / 60  # конвертируем в минуты
+
+    # Обновляем время работы принтера
+    if actual_time and actual_time > 0:
+        current_hours = printer.print_hours or 0
+        db.update_printer(printer.id, print_hours=current_hours + (actual_time / 60))
+
+    # Обновляем задачу (статус cancelled вызовет автосписание материала)
+    db.update_task(
+        task_id,
+        status='cancelled',
+        actual_filament_used=actual_filament,
+        actual_print_time=actual_time,
+        time_end=datetime.now(timezone.utc).isoformat(),
+    )
+
+    # Автосписание материала при отмене
+    if task.coil_id and task.estimated_filament and task.estimated_filament > 0:
+        coil = db.get_coil(task.coil_id)
+        if coil:
+            # Используем фактический расход если есть, иначе расчётный
+            amount = task.estimated_filament
+            if actual_filament and actual_filament > 0:
+                # Конвертируем мм в граммы (примерно)
+                # Для PLA: ~2.98г на метр при диаметре 1.75мм
+                amount = min(amount, actual_filament / 1000 * 2.98)
+            note = f"Автосписание при отмене: задача #{task_id}"
+            db.deduct_material(task.coil_id, amount, task_id=task_id, notes=note)
+
+    updated_task = db.get_task(task_id)
+    return jsonify({"success": True, "task": serialize_task(updated_task)})
 
 
 # ---------------------------------------------------------------------------

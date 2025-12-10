@@ -103,6 +103,23 @@
         </div>
       </section>
     </div>
+    <!-- Секция текущей печати -->
+    <section class="print-job-section" id="printJobSection">
+      <h2>Текущая печать</h2>
+      <div id="printJobContent">
+        <!-- Заполняется динамически -->
+        <div class="no-print-job">
+          <p>Нет активной печати</p>
+          <div class="start-job-container">
+            <select id="taskSelector" class="task-select">
+              <option value="">Выберите задачу...</option>
+            </select>
+            <button id="startTaskBtn" class="start-job-btn" disabled>Запустить</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <div class="row-blocks">
       <section class="axis-section">
         <h2>Оси/Экструдер</h2>

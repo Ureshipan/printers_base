@@ -227,3 +227,190 @@ h2 { margin: 0 0 7px 0; font-size: 17px; font-weight: 700; color: #e0e0f0; }
 .modal-btn:hover {
   background: var(--button-hover, #3562ff);
 }
+
+/* Секция текущей печати */
+.print-job-section {
+  background: #181832;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  border: 1px solid #404060;
+}
+
+.print-job-section h2 {
+  margin: 0 0 14px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #e0e0ff;
+}
+
+.no-print-job {
+  text-align: center;
+  color: #8888aa;
+  padding: 12px 0;
+}
+
+.no-print-job p {
+  margin: 0 0 16px 0;
+}
+
+.start-job-container {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+}
+
+.task-select {
+  padding: 10px 14px;
+  background: #232340;
+  border: 1px solid #404060;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  min-width: 250px;
+  cursor: pointer;
+}
+
+.task-select:focus {
+  outline: none;
+  border-color: #4547ff;
+}
+
+.start-job-btn {
+  padding: 10px 20px;
+  background: #28a745;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.start-job-btn:hover:not(:disabled) {
+  background: #218838;
+}
+
+.start-job-btn:disabled {
+  background: #404060;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Активная печать */
+.active-print-job {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.print-job-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.print-job-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.print-job-project {
+  font-size: 13px;
+  color: #8888bb;
+}
+
+.print-job-status {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.print-job-status.printing {
+  background: rgba(69, 71, 255, 0.2);
+  color: #7d83ff;
+}
+
+.print-job-status.paused {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ffb74d;
+}
+
+.print-progress-container {
+  background: #232340;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.print-progress-bar {
+  height: 8px;
+  background: #404060;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.print-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4547ff, #7a5fff);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.print-progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #aaaacc;
+}
+
+.print-job-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.print-job-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.print-job-btn:active {
+  transform: scale(0.98);
+}
+
+.print-job-btn.pause {
+  background: rgba(255, 152, 0, 0.25);
+  color: #ffb74d;
+}
+
+.print-job-btn.pause:hover {
+  background: rgba(255, 152, 0, 0.4);
+}
+
+.print-job-btn.resume {
+  background: rgba(76, 175, 80, 0.25);
+  color: #81c784;
+}
+
+.print-job-btn.resume:hover {
+  background: rgba(76, 175, 80, 0.4);
+}
+
+.print-job-btn.cancel {
+  background: rgba(244, 67, 54, 0.2);
+  color: #ef9a9a;
+}
+
+.print-job-btn.cancel:hover {
+  background: rgba(244, 67, 54, 0.35);
+}

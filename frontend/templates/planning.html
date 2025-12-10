@@ -39,6 +39,7 @@
                 <option value="pending">Ожидает</option>
                 <option value="queued">В очереди</option>
                 <option value="printing">Печатается</option>
+                <option value="paused">Пауза</option>
                 <option value="completed">Завершена</option>
                 <option value="cancelled">Отменена</option>
               </select>
@@ -109,17 +110,18 @@
               <option value="">Не выбрано</option>
             </select>
           </label>
-          <label>
+          <label class="edit-only">
             Статус
             <select name="status">
               <option value="pending">Ожидает</option>
               <option value="queued">В очереди</option>
               <option value="printing">Печатается</option>
+              <option value="paused">Пауза</option>
               <option value="completed">Завершена</option>
               <option value="cancelled">Отменена</option>
             </select>
           </label>
-          <label>
+          <label class="edit-only">
             Прогресс (%)
             <input type="number" name="progress" min="0" max="100" step="1" value="0">
           </label>

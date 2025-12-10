@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -176,6 +176,10 @@ class Task(Base):
     gcode_nozzle_temp = Column(Integer)
     gcode_bed_temp = Column(Integer)
     gcode_slicer = Column(String)
+    # Поля для отслеживания печати
+    moonraker_filename = Column(String)  # Имя файла на принтере (для связи с активной печатью)
+    actual_filament_used = Column(Float)  # Фактический расход филамента (мм)
+    actual_print_time = Column(Float)     # Фактическое время печати (минуты)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -277,6 +281,10 @@ class DBModel:
             self._add_column_if_missing(conn, 'tasks', 'gcode_nozzle_temp', "INTEGER")
             self._add_column_if_missing(conn, 'tasks', 'gcode_bed_temp', "INTEGER")
             self._add_column_if_missing(conn, 'tasks', 'gcode_slicer', "TEXT")
+            # Поля для отслеживания печати
+            self._add_column_if_missing(conn, 'tasks', 'moonraker_filename', "TEXT")
+            self._add_column_if_missing(conn, 'tasks', 'actual_filament_used', "FLOAT")
+            self._add_column_if_missing(conn, 'tasks', 'actual_print_time', "FLOAT")
 
             # Активная катушка принтера
             self._add_column_if_missing(conn, 'printers', 'active_coil_id', "INTEGER REFERENCES coils(id)")
@@ -967,6 +975,23 @@ class DBModel:
                     joinedload(Task.coil).joinedload(Coil.material),
                 )
                 .get(task_id)
+            )
+        finally:
+            session.close()
+
+    def get_tasks_by_status(self, statuses: List[str]) -> List[Task]:
+        """Получить задачи с указанными статусами."""
+        session = self.get_session()
+        try:
+            return (
+                session.query(Task)
+                .options(
+                    joinedload(Task.project),
+                    joinedload(Task.printer),
+                    joinedload(Task.coil).joinedload(Coil.material),
+                )
+                .filter(Task.status.in_(statuses))
+                .all()
             )
         finally:
             session.close()

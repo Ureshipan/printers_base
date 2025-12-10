@@ -5,6 +5,7 @@ let coils = [];
 let currentTaskId = null;
 let currentProjectId = null;
 let pendingGcodeFile = null;  // Файл G-code для загрузки при создании задачи
+let parsedEstimatedTime = null;  // Время печати из G-code (минуты) для авторасчёта даты окончания
 
 const taskModal = document.getElementById('taskModal');
 const openTaskModalBtn = document.getElementById('openTaskModal');
@@ -35,6 +36,7 @@ const STATUS_LABELS = {
   pending: 'Ожидает',
   queued: 'В очереди',
   printing: 'Печатается',
+  paused: 'Пауза',
   completed: 'Завершена',
   cancelled: 'Отменена'
 };
@@ -80,6 +82,11 @@ function registerEventListeners() {
   // Обработчик загрузки G-code в модальном окне создания задачи
   if (taskGcodeInput) {
     taskGcodeInput.addEventListener('change', handleTaskGcodeSelect);
+  }
+  // Авторасчёт даты окончания при изменении даты начала
+  const timeStartInput = taskForm.elements['time_start'];
+  if (timeStartInput) {
+    timeStartInput.addEventListener('change', updateTimeEnd);
   }
   openProjectModalBtn.addEventListener('click', () => openProjectModal());
   closeProjectModalBtn.addEventListener('click', closeProjectModal);
@@ -309,7 +316,8 @@ function renderTasks() {
       </td>
       <td>
         <div class="gcode-actions">
-          <button class="action-btn primary" data-action="edit" data-id="${task.id}">Редактировать</button>
+          ${renderPrintActions(task)}
+          <button class="action-btn primary" data-action="edit" data-id="${task.id}">Изм.</button>
           <button class="action-btn secondary" data-action="upload" data-id="${task.id}">G-code</button>
           <button class="action-btn destructive" data-action="delete" data-id="${task.id}">Удалить</button>
         </div>
@@ -381,8 +389,37 @@ function renderGcodeInfo(task) {
   `;
 }
 
+function renderPrintActions(task) {
+  const status = task.status || 'pending';
+  const hasGcode = task.gcode?.has_file;
+  const hasPrinter = !!task.printer?.id;
+
+  // Кнопка запуска - только для pending/queued с G-code и принтером
+  if ((status === 'pending' || status === 'queued') && hasGcode && hasPrinter) {
+    return `<button class="action-btn print-start" data-print-action="start" data-id="${task.id}" title="Запустить печать">▶</button>`;
+  }
+
+  // Кнопки для печатающейся задачи
+  if (status === 'printing') {
+    return `
+      <button class="action-btn print-pause" data-print-action="pause" data-id="${task.id}" title="Пауза">⏸</button>
+      <button class="action-btn print-cancel" data-print-action="cancel" data-id="${task.id}" title="Отмена">✕</button>
+    `;
+  }
+
+  // Кнопки для задачи на паузе
+  if (status === 'paused') {
+    return `
+      <button class="action-btn print-resume" data-print-action="resume" data-id="${task.id}" title="Возобновить">▶</button>
+      <button class="action-btn print-cancel" data-print-action="cancel" data-id="${task.id}" title="Отмена">✕</button>
+    `;
+  }
+
+  return '';
+}
+
 function handleRowAction(event) {
-  const actionButton = event.target.closest('[data-action], [data-remove-gcode], [data-download]');
+  const actionButton = event.target.closest('[data-action], [data-remove-gcode], [data-download], [data-print-action]');
   if (!actionButton) {
     return;
   }
@@ -394,6 +431,14 @@ function handleRowAction(event) {
   }
 
   const taskId = parseInt(actionButton.dataset.id, 10);
+
+  // Обработка действий печати
+  const printAction = actionButton.dataset.printAction;
+  if (printAction) {
+    handlePrintAction(printAction, taskId);
+    return;
+  }
+
   if (actionButton.dataset.removeGcode !== undefined) {
     confirmAndRemoveGcode(taskId);
     return;
@@ -415,9 +460,16 @@ function openTaskModal(taskId = null) {
   taskForm.reset();
   populateSelectOptions();
   resetGcodeUploadUI();  // Сброс состояния загрузки G-code
+  parsedEstimatedTime = null;  // Сброс времени из gcode
+
+  // Управление видимостью полей edit-only (Статус, Прогресс)
+  const editOnlyFields = taskForm.querySelectorAll('.edit-only');
 
   if (taskId) {
     modalTitle.textContent = 'Редактирование задачи';
+    // Показываем поля edit-only при редактировании
+    editOnlyFields.forEach(el => el.classList.remove('hidden'));
+
     const task = tasks.find(item => item.id === taskId);
     if (task) {
       taskForm.elements['name'].value = task.name || '';
@@ -431,6 +483,11 @@ function openTaskModal(taskId = null) {
       taskForm.elements['time_end'].value = toInputDateTime(task.time_end);
       taskForm.elements['notes'].value = task.notes || '';
 
+      // Сохраняем время печати из gcode для авторасчёта
+      if (task.estimated_time_minutes) {
+        parsedEstimatedTime = task.estimated_time_minutes;
+      }
+
       // Показываем информацию о загруженном G-code файле
       if (task.gcode?.has_file && gcodeFileName) {
         gcodeFileName.textContent = task.gcode.original_name || 'Файл загружен';
@@ -439,6 +496,8 @@ function openTaskModal(taskId = null) {
     }
   } else {
     modalTitle.textContent = 'Новая задача';
+    // Скрываем поля edit-only при создании новой задачи
+    editOnlyFields.forEach(el => el.classList.add('hidden'));
     taskForm.elements['progress'].value = 0;
   }
 }
@@ -653,6 +712,45 @@ function fillFormFromGcodeData(data) {
   if (materialInput && data.estimated_filament) {
     materialInput.value = data.estimated_filament;
   }
+
+  // Сохраняем время печати для авторасчёта даты окончания
+  if (data.estimated_time_minutes) {
+    parsedEstimatedTime = data.estimated_time_minutes;
+    // Пересчитываем дату окончания если указана дата начала
+    updateTimeEnd();
+  }
+}
+
+/**
+ * Автоматически рассчитывает дату окончания на основе даты начала и времени печати из G-code.
+ */
+function updateTimeEnd() {
+  const timeStartInput = taskForm.elements['time_start'];
+  const timeEndInput = taskForm.elements['time_end'];
+
+  if (!timeStartInput || !timeEndInput || !parsedEstimatedTime) {
+    return;
+  }
+
+  const startValue = timeStartInput.value;
+  if (!startValue) {
+    return;
+  }
+
+  // Парсим дату начала и прибавляем время печати
+  const startDate = new Date(startValue);
+  if (isNaN(startDate.getTime())) {
+    return;
+  }
+
+  // Прибавляем время печати (в минутах)
+  const endDate = new Date(startDate.getTime() + parsedEstimatedTime * 60 * 1000);
+
+  // Форматируем для datetime-local input (YYYY-MM-DDTHH:MM)
+  const pad = n => n.toString().padStart(2, '0');
+  const endFormatted = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`;
+
+  timeEndInput.value = endFormatted;
 }
 
 /**
@@ -852,3 +950,78 @@ async function confirmAndDeleteProject(projectId) {
     showMessage(error.message, true);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Print Control Functions
+// ---------------------------------------------------------------------------
+
+async function handlePrintAction(action, taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) {
+    showMessage('Задача не найдена', true);
+    return;
+  }
+
+  const confirmMessages = {
+    start: `Запустить печать задачи "${task.name || 'Без названия'}"?`,
+    pause: `Приостановить печать задачи "${task.name || 'Без названия'}"?`,
+    resume: `Возобновить печать задачи "${task.name || 'Без названия'}"?`,
+    cancel: `Отменить печать задачи "${task.name || 'Без названия'}"?\nМатериал будет списан частично.`
+  };
+
+  const confirmed = window.confirm(confirmMessages[action] || 'Выполнить действие?');
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const response = await fetchJson(`/api/tasks/${taskId}/print/${action}`, { method: 'POST' });
+    if (response.success) {
+      const successMessages = {
+        start: 'Печать запущена',
+        pause: 'Печать приостановлена',
+        resume: 'Печать возобновлена',
+        cancel: 'Печать отменена'
+      };
+      showMessage(successMessages[action] || 'Действие выполнено');
+      await loadTasks();
+    } else {
+      showMessage(response.message || 'Ошибка выполнения', true);
+    }
+  } catch (error) {
+    showMessage(error.message || 'Ошибка сети', true);
+  }
+}
+
+// Автообновление списка задач для отслеживания прогресса печати
+let autoRefreshInterval = null;
+
+function startAutoRefresh() {
+  if (autoRefreshInterval) {
+    return;
+  }
+  autoRefreshInterval = setInterval(async () => {
+    // Проверяем есть ли печатающиеся или приостановленные задачи
+    const hasPrintingTasks = tasks.some(t => t.status === 'printing' || t.status === 'paused');
+    if (hasPrintingTasks) {
+      await loadTasks();
+    }
+  }, 5000); // Обновляем каждые 5 секунд
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+    autoRefreshInterval = null;
+  }
+}
+
+// Запускаем автообновление при загрузке страницы
+document.addEventListener('DOMContentLoaded', () => {
+  startAutoRefresh();
+});
+
+// Останавливаем при уходе со страницы
+window.addEventListener('beforeunload', () => {
+  stopAutoRefresh();
+});

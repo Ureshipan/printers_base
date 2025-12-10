@@ -117,6 +117,7 @@
 .status-pending { background: rgba(191, 200, 255, 0.12); color: #bcc2ff; }
 .status-queued { background: rgba(255, 196, 0, 0.14); color: #ffd05b; }
 .status-printing { background: rgba(69, 71, 255, 0.18); color: #7d83ff; }
+.status-paused { background: rgba(255, 152, 0, 0.18); color: #ffb74d; }
 .status-completed { background: rgba(59, 201, 140, 0.15); color: #5adc96; }
 .status-cancelled { background: rgba(252, 89, 130, 0.16); color: #ffa0b8; }
 
@@ -362,6 +363,8 @@
   padding: 24px 28px;
   width: 620px;
   max-width: calc(100vw - 64px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   border: 1px solid rgba(108, 117, 255, 0.25);
   box-shadow: 0 18px 48px rgba(22, 22, 56, 0.7);
 }
@@ -588,4 +591,54 @@ select[name="coil_id"] option[data-status="critical"] {
 
 select[name="coil_id"] option[data-status="warning"] {
   background: rgba(255, 193, 7, 0.1);
+}
+
+/* Скрытие полей только для редактирования */
+.edit-only.hidden {
+  display: none;
+}
+
+/* Кнопки управления печатью */
+.action-btn.print-start {
+  background: rgba(76, 175, 80, 0.25);
+  color: #81c784;
+  font-size: 14px;
+  padding: 6px 10px;
+}
+
+.action-btn.print-start:hover {
+  background: rgba(76, 175, 80, 0.4);
+}
+
+.action-btn.print-pause {
+  background: rgba(255, 152, 0, 0.25);
+  color: #ffb74d;
+  font-size: 14px;
+  padding: 6px 10px;
+}
+
+.action-btn.print-pause:hover {
+  background: rgba(255, 152, 0, 0.4);
+}
+
+.action-btn.print-resume {
+  background: rgba(76, 175, 80, 0.25);
+  color: #81c784;
+  font-size: 14px;
+  padding: 6px 10px;
+}
+
+.action-btn.print-resume:hover {
+  background: rgba(76, 175, 80, 0.4);
+}
+
+.action-btn.print-cancel {
+  background: rgba(244, 67, 54, 0.2);
+  color: #ef9a9a;
+  font-size: 14px;
+  padding: 6px 10px;
+}
+
+.action-btn.print-cancel:hover {
+  background: rgba(244, 67, 54, 0.35);
 }

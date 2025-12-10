@@ -175,6 +175,9 @@ function selectPrinter(printerId, titleEl, statusEl, body, dropdown) {
 
   // Обновляем сразу состояние выбранного принтера
   updatePrinterState();
+
+  // Загружаем задачи для этого принтера
+  loadTasksForPrinter(printerId);
 }
 
 function updatePrinterStatusText(statusEl, status, percent = 0) {
@@ -427,6 +430,201 @@ function clearConsole() {
 //   const newHours = Math.floor(totalSeconds / 3600);
 //   const newMinutes = Math.floor((totalSeconds % 3600) / 60);
 //   const newSecs = totalSeconds % 60;
-//   timeElement.textContent = 
+//   timeElement.textContent =
 //     `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}:${String(newSecs).padStart(2, '0')}`;
 // }, 1000);
+
+// ---------------------------------------------------------------------------
+// Print Job Control Functions
+// ---------------------------------------------------------------------------
+let tasksCache = [];
+let currentPrintingTask = null;
+
+async function loadTasksForPrinter(printerId) {
+  try {
+    const response = await fetch('/api/tasks');
+    if (!response.ok) throw new Error('Не удалось загрузить задачи');
+    const allTasks = await response.json();
+    // Фильтруем задачи для текущего принтера
+    tasksCache = allTasks.filter(t =>
+      t.printer?.id === printerId &&
+      (t.status === 'pending' || t.status === 'queued' || t.status === 'printing' || t.status === 'paused') &&
+      t.gcode?.has_file
+    );
+    updatePrintJobSection();
+  } catch (error) {
+    console.error('Ошибка загрузки задач:', error);
+    tasksCache = [];
+  }
+}
+
+function updatePrintJobSection() {
+  const printJobContent = document.getElementById('printJobContent');
+  if (!printJobContent) return;
+
+  // Ищем печатающуюся или приостановленную задачу
+  currentPrintingTask = tasksCache.find(t => t.status === 'printing' || t.status === 'paused');
+
+  if (currentPrintingTask) {
+    renderActivePrintJob(printJobContent, currentPrintingTask);
+  } else {
+    renderNoPrintJob(printJobContent);
+  }
+}
+
+function renderActivePrintJob(container, task) {
+  const progress = task.progress || 0;
+  const statusLabel = task.status === 'printing' ? 'Печатается' : 'Пауза';
+  const estimatedTime = task.estimated_time_minutes || 0;
+  const remainingTime = estimatedTime > 0 ? Math.round(estimatedTime * (100 - progress) / 100) : 0;
+
+  container.innerHTML = `
+    <div class="active-print-job">
+      <div class="print-job-header">
+        <div>
+          <div class="print-job-name">${task.name || 'Без названия'}</div>
+          <div class="print-job-project">${task.project?.name || 'Без проекта'}</div>
+        </div>
+        <span class="print-job-status ${task.status}">${statusLabel}</span>
+      </div>
+      <div class="print-progress-container">
+        <div class="print-progress-bar">
+          <div class="print-progress-fill" style="width: ${progress}%"></div>
+        </div>
+        <div class="print-progress-info">
+          <span>${progress}%</span>
+          <span>${remainingTime > 0 ? `~${remainingTime} мин осталось` : ''}</span>
+        </div>
+      </div>
+      <div class="print-job-actions">
+        ${task.status === 'printing'
+          ? `<button class="print-job-btn pause" onclick="pausePrintJob(${task.id})">⏸ Пауза</button>`
+          : `<button class="print-job-btn resume" onclick="resumePrintJob(${task.id})">▶ Возобновить</button>`
+        }
+        <button class="print-job-btn cancel" onclick="cancelPrintJob(${task.id})">✕ Отменить</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderNoPrintJob(container) {
+  // Получаем задачи готовые к печати (pending/queued с G-code)
+  const readyTasks = tasksCache.filter(t => (t.status === 'pending' || t.status === 'queued') && t.gcode?.has_file);
+
+  let optionsHtml = '<option value="">Выберите задачу...</option>';
+  readyTasks.forEach(task => {
+    optionsHtml += `<option value="${task.id}">${task.name || 'Без названия'} (${task.project?.name || 'Без проекта'})</option>`;
+  });
+
+  container.innerHTML = `
+    <div class="no-print-job">
+      <p>Нет активной печати</p>
+      <div class="start-job-container">
+        <select id="taskSelector" class="task-select" onchange="onTaskSelectorChange()">
+          ${optionsHtml}
+        </select>
+        <button id="startTaskBtn" class="start-job-btn" disabled onclick="startSelectedTask()">Запустить</button>
+      </div>
+    </div>
+  `;
+}
+
+function onTaskSelectorChange() {
+  const selector = document.getElementById('taskSelector');
+  const startBtn = document.getElementById('startTaskBtn');
+  if (selector && startBtn) {
+    startBtn.disabled = !selector.value;
+  }
+}
+
+async function startSelectedTask() {
+  const selector = document.getElementById('taskSelector');
+  if (!selector || !selector.value) return;
+
+  const taskId = parseInt(selector.value, 10);
+  const task = tasksCache.find(t => t.id === taskId);
+
+  if (!confirm(`Запустить печать задачи "${task?.name || 'Без названия'}"?`)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/print/start`, { method: 'POST' });
+    const result = await response.json();
+
+    if (result.success) {
+      addConsoleMessage('< Печать запущена');
+      await loadTasksForPrinter(selectedPrinterId);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+      alert(result.message || 'Ошибка запуска печати');
+    }
+  } catch (error) {
+    console.error('Ошибка запуска печати:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+  }
+}
+
+async function pausePrintJob(taskId) {
+  if (!confirm('Приостановить печать?')) return;
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/print/pause`, { method: 'POST' });
+    const result = await response.json();
+
+    if (result.success) {
+      addConsoleMessage('< Печать приостановлена');
+      await loadTasksForPrinter(selectedPrinterId);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('Ошибка паузы:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+  }
+}
+
+async function resumePrintJob(taskId) {
+  if (!confirm('Возобновить печать?')) return;
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/print/resume`, { method: 'POST' });
+    const result = await response.json();
+
+    if (result.success) {
+      addConsoleMessage('< Печать возобновлена');
+      await loadTasksForPrinter(selectedPrinterId);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('Ошибка возобновления:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+  }
+}
+
+async function cancelPrintJob(taskId) {
+  if (!confirm('Отменить печать? Материал будет списан частично.')) return;
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/print/cancel`, { method: 'POST' });
+    const result = await response.json();
+
+    if (result.success) {
+      addConsoleMessage('< Печать отменена');
+      await loadTasksForPrinter(selectedPrinterId);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('Ошибка отмены:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+  }
+}
+
+// Периодическое обновление задач для отслеживания прогресса
+setInterval(async () => {
+  if (selectedPrinterId && currentPrintingTask) {
+    await loadTasksForPrinter(selectedPrinterId);
+  }
+}, 5000);
