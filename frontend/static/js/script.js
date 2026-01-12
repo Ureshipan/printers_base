@@ -141,6 +141,7 @@ function renderPrinters(printers) {
     const isOffline = p.status === 'offline';
     const isError = p.status === 'error';
     const isAwaitingRemoval = p.status === 'awaiting_removal';
+    const isVirtualPrinter = p.is_virtual || false;
 
     let statusClass = '';
     if (p.status === 'work') statusClass = 'status-work';
@@ -148,6 +149,7 @@ function renderPrinters(printers) {
     else if (p.status === 'error') statusClass = 'status-error';
     else if (p.status === 'service') statusClass = 'status-service';
     else if (p.status === 'offline') statusClass = 'status-offline';
+    else if (p.status === 'paused') statusClass = 'status-paused';
     else if (p.status === 'awaiting_removal') statusClass = 'status-awaiting_removal';
 
     let progClass = '';
@@ -156,12 +158,14 @@ function renderPrinters(printers) {
     else if (p.status === 'error') progClass = 'progress-error';
     else if (p.status === 'service') progClass = 'progress-service';
     else if (p.status === 'offline') progClass = 'progress-offline';
+    else if (p.status === 'paused') progClass = 'progress-paused';
 
     const statusText =
       p.status === 'work' ? 'В работе' :
       p.status === 'idle' ? 'Простаивает' :
       p.status === 'error' ? 'Ошибка' :
       p.status === 'offline' ? 'Нет связи' :
+      p.status === 'paused' ? 'Пауза' :
       p.status === 'awaiting_removal' ? 'Ожидает уборки' :
       'Тех. осмотр';
 
@@ -170,8 +174,10 @@ function renderPrinters(printers) {
     if (needsMaintenance && !isOffline) cardClass += ' needs-maintenance';
     if (isError) cardClass += ' has-error';
     if (isAwaitingRemoval) cardClass += ' awaiting-removal';
+    if (isVirtualPrinter) cardClass += ' offline-manual';
 
     const offlineBadge = isOffline ? '<span class="offline-badge">⚠ НЕТ СВЯЗИ</span>' : '';
+    const virtualBadge = isVirtualPrinter && !isOffline ? '<span class="virtual-badge">ОФФЛАЙН</span>' : '';
     const maintenanceBadge = (needsMaintenance && !isOffline) ? '<span class="maintenance-badge">🔧 ОБСЛУЖИВАНИЕ</span>' : '';
 
     // Кнопка подтверждения уборки детали
@@ -182,6 +188,7 @@ function renderPrinters(printers) {
     printersGrid.innerHTML += `
       <div class="${cardClass}">
         ${offlineBadge}
+        ${virtualBadge}
         ${maintenanceBadge}
         <button class="edit-printer-btn" onclick="event.stopPropagation(); openEditPrinterModal(${p.id})" title="Редактировать">✎</button>
         <div class="printer-card-content" onclick="selectPrinter(${p.id})">
@@ -557,16 +564,32 @@ function openEditPrinterModal(printerId) {
   const hostField = document.getElementById('editPrinterHostField');
   const portField = document.getElementById('editPrinterPortField');
   const statusField = document.getElementById('editPrinterStatusField');
+  const offlineFields = document.getElementById('offlineFieldsGroup');
 
   if (printer.is_virtual) {
     hostField.style.display = 'none';
     portField.style.display = 'none';
     statusField.style.display = 'block';
+    offlineFields.style.display = 'block';
     document.getElementById('editPrinterStatus').value = printer.status || 'idle';
+
+    // Заполняем оффлайн-поля
+    const filenameInput = document.getElementById('editPrinterFilename');
+    const progressInput = document.getElementById('editPrinterProgress');
+    const progressSlider = document.getElementById('editPrinterProgressSlider');
+
+    filenameInput.value = printer.model !== 'Неизвестная модель' ? printer.model : '';
+    progressInput.value = printer.percent || 0;
+    progressSlider.value = printer.percent || 0;
+
+    // Синхронизация слайдера с инпутом
+    progressInput.oninput = () => { progressSlider.value = progressInput.value; };
+    progressSlider.oninput = () => { progressInput.value = progressSlider.value; };
   } else {
     hostField.style.display = 'block';
     portField.style.display = 'block';
     statusField.style.display = 'none';
+    offlineFields.style.display = 'none';
     // Для реальных принтеров нужно получить данные из API
     fetchPrinterDetails(printerId);
   }
@@ -622,6 +645,11 @@ async function submitEditPrinter() {
 
   if (currentEditPrinter && currentEditPrinter.is_virtual) {
     payload.status = document.getElementById('editPrinterStatus').value;
+    // Оффлайн-поля
+    const filename = document.getElementById('editPrinterFilename').value.trim();
+    const progress = parseInt(document.getElementById('editPrinterProgress').value, 10) || 0;
+    payload.manual_filename = filename || null;
+    payload.manual_progress = progress;
   } else {
     const host = document.getElementById('editPrinterHost').value.trim();
     const port = parseInt(document.getElementById('editPrinterPort').value, 10) || 7125;

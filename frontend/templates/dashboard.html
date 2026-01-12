@@ -154,11 +154,26 @@
           <select id="editPrinterStatus">
             <option value="idle">Простаивает</option>
             <option value="work">В работе</option>
+            <option value="paused">Пауза</option>
             <option value="error">Ошибка</option>
             <option value="service">Тех. осмотр</option>
             <option value="offline">Офлайн</option>
           </select>
         </label>
+        <!-- Поля для оффлайн-принтеров -->
+        <div id="offlineFieldsGroup" style="display:none;">
+          <label class="modal-field">
+            <span>Имя файла/модели</span>
+            <input type="text" id="editPrinterFilename" placeholder="model.gcode">
+          </label>
+          <label class="modal-field">
+            <span>Прогресс печати (%)</span>
+            <div class="progress-input-group">
+              <input type="number" id="editPrinterProgress" min="0" max="100" value="0">
+              <input type="range" id="editPrinterProgressSlider" min="0" max="100" value="0" class="progress-slider">
+            </div>
+          </label>
+        </div>
         <label class="modal-field" id="editPrinterNozzleField">
           <span>Диаметр сопла (мм)</span>
           <select id="editPrinterNozzle">

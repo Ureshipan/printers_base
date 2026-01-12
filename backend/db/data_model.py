@@ -37,6 +37,10 @@ class Printer(Base):
     nozzle_diameter = Column(Float, default=0.4)  # Диаметр сопла в мм
     active_coil_id = Column(Integer, ForeignKey('coils.id'))  # Активная катушка принтера
     removal_confirmed = Column(Boolean, default=False)  # Подтверждение уборки детали после печати
+    # Поля для оффлайн-принтеров (ручной ввод данных)
+    manual_progress = Column(Integer, default=0)  # Прогресс печати 0-100%
+    manual_filename = Column(String)  # Имя файла/модели
+    manual_print_start = Column(DateTime)  # Время начала печати
 
     tasks = relationship('Task', back_populates='printer')
     maintenance_records = relationship('MaintenanceRecord', back_populates='printer', cascade='all, delete-orphan')
@@ -267,6 +271,10 @@ class DBModel:
             self._add_column_if_missing(conn, 'printers', 'print_hours', "FLOAT DEFAULT 0.0")
             self._add_column_if_missing(conn, 'printers', 'nozzle_diameter', "FLOAT DEFAULT 0.4")
             self._add_column_if_missing(conn, 'printers', 'removal_confirmed', "BOOLEAN DEFAULT 0")
+            # Поля для оффлайн-принтеров
+            self._add_column_if_missing(conn, 'printers', 'manual_progress', "INTEGER DEFAULT 0")
+            self._add_column_if_missing(conn, 'printers', 'manual_filename', "TEXT")
+            self._add_column_if_missing(conn, 'printers', 'manual_print_start', "DATETIME")
 
             self._add_column_if_missing(conn, 'projects', 'color', "TEXT DEFAULT '#888888'")
 

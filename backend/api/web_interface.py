@@ -292,6 +292,12 @@ def fetch_printer_state(printer: Printer) -> Dict:
     if getattr(printer, "is_virtual", False):
         state = build_default_state()
         state["status"] = getattr(printer, "virtual_status", "idle") or "idle"
+        # Данные для оффлайн-принтеров (ручной ввод)
+        state["progress"] = getattr(printer, "manual_progress", 0) or 0
+        state["filename"] = getattr(printer, "manual_filename", None)
+        manual_start = getattr(printer, "manual_print_start", None)
+        state["manual_print_start"] = manual_start.isoformat() if manual_start else None
+        state["is_offline"] = True
         return state
 
     state = build_default_state()
@@ -891,15 +897,45 @@ def api_printer_detail(printer_id: int):
                 return jsonify({"success": False, "message": "Название принтера обязательно"}), 400
             updates['name'] = name
 
-        # Для виртуальных принтеров можно менять статус
-        if getattr(printer, "is_virtual", False) and 'status' in data:
-            status = (data.get('status') or '').strip().lower()
-            if status and status in ALLOWED_VIRTUAL_STATUSES:
-                updates['virtual_status'] = status
-                # Обновляем кэш состояния
-                with printer_state_lock:
-                    if printer_id in printer_states:
-                        printer_states[printer_id]['status'] = status
+        # Для виртуальных принтеров можно менять статус и ручные данные
+        if getattr(printer, "is_virtual", False):
+            if 'status' in data:
+                status = (data.get('status') or '').strip().lower()
+                if status and status in ALLOWED_VIRTUAL_STATUSES:
+                    updates['virtual_status'] = status
+
+            # Ручные данные для оффлайн-принтеров
+            if 'manual_progress' in data:
+                try:
+                    progress = int(data.get('manual_progress', 0))
+                    updates['manual_progress'] = max(0, min(100, progress))
+                except (TypeError, ValueError):
+                    pass
+
+            if 'manual_filename' in data:
+                filename = data.get('manual_filename')
+                updates['manual_filename'] = (filename or '').strip() or None
+
+            if 'manual_print_start' in data:
+                start_str = data.get('manual_print_start')
+                if start_str:
+                    try:
+                        from datetime import datetime as dt
+                        updates['manual_print_start'] = dt.fromisoformat(start_str.replace('Z', '+00:00'))
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    updates['manual_print_start'] = None
+
+            # Обновляем кэш состояния для виртуальных принтеров
+            with printer_state_lock:
+                if printer_id in printer_states:
+                    if 'virtual_status' in updates:
+                        printer_states[printer_id]['status'] = updates['virtual_status']
+                    if 'manual_progress' in updates:
+                        printer_states[printer_id]['progress'] = updates['manual_progress']
+                    if 'manual_filename' in updates:
+                        printer_states[printer_id]['filename'] = updates['manual_filename']
 
         # Для реальных принтеров можно менять host/port
         if not getattr(printer, "is_virtual", False):
@@ -1880,6 +1916,199 @@ def api_task_print_cancel(task_id: int):
 
     updated_task = db.get_task(task_id)
     return jsonify({"success": True, "task": serialize_task(updated_task)})
+
+
+# ---------------------------------------------------------------------------
+# Routes - Offline Task API (для оффлайн-принтеров)
+# ---------------------------------------------------------------------------
+
+# Допустимые переходы статусов для оффлайн-задач
+OFFLINE_TASK_TRANSITIONS = {
+    'pending': ['queued', 'printing', 'cancelled'],
+    'queued': ['printing', 'cancelled'],
+    'printing': ['paused', 'completed', 'cancelled'],
+    'paused': ['printing', 'cancelled', 'completed'],
+}
+
+
+@app.route('/api/tasks/<int:task_id>/offline/update', methods=['POST'])
+def api_task_offline_update(task_id: int):
+    """Ручное обновление статуса и прогресса задачи для оффлайн-принтеров."""
+    task = db.get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": "Задача не найдена"}), 404
+
+    printer = db.get_printer_by_id(task.printer_id) if task.printer_id else None
+    if not printer or not getattr(printer, 'is_virtual', False):
+        return jsonify({"success": False, "message": "Задача не привязана к оффлайн-принтеру"}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+    updates = {}
+
+    # Изменение статуса с валидацией переходов
+    if 'status' in data:
+        old_status = task.status or 'pending'
+        new_status = data['status']
+        allowed = OFFLINE_TASK_TRANSITIONS.get(old_status, [])
+        if new_status not in allowed:
+            return jsonify({
+                "success": False,
+                "message": f"Переход {old_status} → {new_status} недопустим. Допустимые: {', '.join(allowed)}"
+            }), 400
+
+        updates['status'] = new_status
+
+        # При начале печати сохраняем время
+        if new_status == 'printing' and old_status in ('pending', 'queued'):
+            updates['time_start'] = datetime.now(timezone.utc).isoformat()
+            # Обновляем данные принтера
+            db.update_printer(printer.id, virtual_status='work', manual_print_start=datetime.now(timezone.utc))
+            with printer_state_lock:
+                if printer.id in printer_states:
+                    printer_states[printer.id]['status'] = 'work'
+
+        # При завершении/отмене
+        if new_status in ('completed', 'cancelled'):
+            updates['time_end'] = datetime.now(timezone.utc).isoformat()
+            # Сбрасываем статус принтера
+            db.update_printer(printer.id, virtual_status='idle', manual_progress=0, manual_filename=None, manual_print_start=None)
+            with printer_state_lock:
+                if printer.id in printer_states:
+                    printer_states[printer.id]['status'] = 'idle'
+                    printer_states[printer.id]['progress'] = 0
+                    printer_states[printer.id]['filename'] = None
+
+        # При паузе
+        if new_status == 'paused':
+            db.update_printer(printer.id, virtual_status='paused')
+            with printer_state_lock:
+                if printer.id in printer_states:
+                    printer_states[printer.id]['status'] = 'paused'
+
+    # Обновление прогресса
+    if 'progress' in data:
+        try:
+            progress = int(data['progress'])
+            updates['progress'] = max(0, min(100, progress))
+            # Синхронизируем прогресс с принтером
+            db.update_printer(printer.id, manual_progress=updates['progress'])
+            with printer_state_lock:
+                if printer.id in printer_states:
+                    printer_states[printer.id]['progress'] = updates['progress']
+        except (TypeError, ValueError):
+            pass
+
+    if not updates:
+        return jsonify({"success": False, "message": "Нет данных для обновления"}), 400
+
+    db.update_task(task_id, **updates)
+    updated_task = db.get_task(task_id)
+    return jsonify({"success": True, "task": serialize_task(updated_task)})
+
+
+@app.route('/api/tasks/<int:task_id>/offline/deduct-material', methods=['POST'])
+def api_task_offline_deduct(task_id: int):
+    """Ручное списание материала для оффлайн-задачи."""
+    task = db.get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": "Задача не найдена"}), 404
+
+    if not task.coil_id:
+        return jsonify({"success": False, "message": "Катушка не назначена для задачи"}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+    amount = data.get('amount')
+
+    # Если количество не указано, используем estimated_filament
+    if amount is None:
+        amount = task.estimated_filament
+
+    if not amount or amount <= 0:
+        return jsonify({"success": False, "message": "Укажите количество материала для списания"}), 400
+
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "Некорректное количество материала"}), 400
+
+    coil = db.get_coil(task.coil_id)
+    if not coil:
+        return jsonify({"success": False, "message": "Катушка не найдена"}), 404
+
+    # Проверка достаточности материала
+    if coil.remains is not None and coil.remains < amount:
+        return jsonify({
+            "success": False,
+            "message": f"Недостаточно материала. Доступно: {coil.remains:.1f}г, требуется: {amount:.1f}г",
+            "warning_type": "insufficient_material"
+        }), 400
+
+    notes = data.get('notes') or f"Ручное списание: задача #{task_id}"
+    updated_coil = db.deduct_material(task.coil_id, amount, task_id=task_id, notes=notes)
+
+    return jsonify({
+        "success": True,
+        "deducted_amount": amount,
+        "coil": {
+            "id": updated_coil.id,
+            "name": updated_coil.name,
+            "remains": updated_coil.remains,
+            "remains_percent": updated_coil.remains_percent,
+        }
+    })
+
+
+@app.route('/api/tasks/<int:task_id>/offline/complete', methods=['POST'])
+def api_task_offline_complete(task_id: int):
+    """Завершение оффлайн-задачи с опциональным списанием материала."""
+    task = db.get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": "Задача не найдена"}), 404
+
+    printer = db.get_printer_by_id(task.printer_id) if task.printer_id else None
+    if not printer or not getattr(printer, 'is_virtual', False):
+        return jsonify({"success": False, "message": "Задача не привязана к оффлайн-принтеру"}), 400
+
+    if task.status not in ('printing', 'paused'):
+        return jsonify({"success": False, "message": "Задача должна быть в статусе печати или паузы"}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+    deduct_material = data.get('deduct_material', True)
+    amount = data.get('amount')
+
+    # Обновляем задачу
+    db.update_task(
+        task_id,
+        status='completed',
+        progress=100,
+        time_end=datetime.now(timezone.utc).isoformat(),
+    )
+
+    # Сбрасываем статус принтера
+    db.update_printer(printer.id, virtual_status='idle', manual_progress=0, manual_filename=None, manual_print_start=None)
+    with printer_state_lock:
+        if printer.id in printer_states:
+            printer_states[printer.id]['status'] = 'idle'
+            printer_states[printer.id]['progress'] = 0
+            printer_states[printer.id]['filename'] = None
+
+    # Списание материала
+    deducted = None
+    if deduct_material and task.coil_id:
+        deduct_amount = amount if amount else task.estimated_filament
+        if deduct_amount and deduct_amount > 0:
+            coil = db.get_coil(task.coil_id)
+            if coil and (coil.remains is None or coil.remains >= deduct_amount):
+                notes = f"Автосписание при завершении: задача #{task_id}"
+                db.deduct_material(task.coil_id, deduct_amount, task_id=task_id, notes=notes)
+                deducted = deduct_amount
+
+    updated_task = db.get_task(task_id)
+    return jsonify({
+        "success": True,
+        "task": serialize_task(updated_task),
+        "material_deducted": deducted,
+    })
 
 
 # ---------------------------------------------------------------------------

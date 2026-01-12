@@ -300,6 +300,91 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
 .progress-error { background: #fa3280; }
 .progress-service { background: #e162e7; }
 .progress-offline { background: #555566; }
+.progress-paused { background: #ff9800; }
+
+/* Стили для оффлайн-принтеров (виртуальных) */
+.printer-card.offline-manual {
+  border-left: 4px solid #ff9800;
+}
+.printer-card.offline-manual:hover {
+  border-color: #ffb74d;
+}
+
+.virtual-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #ff9800;
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  z-index: 2;
+}
+
+.status-paused {
+  color: #ff9800;
+  font-weight: 600;
+}
+
+/* Группа для прогресса с слайдером */
+.progress-input-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.progress-input-group input[type="number"] {
+  width: 70px;
+}
+.progress-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 6px;
+  background: #282851;
+  border-radius: 3px;
+  outline: none;
+}
+.progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #4c4bff;
+  cursor: pointer;
+}
+.progress-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #4c4bff;
+  cursor: pointer;
+  border: none;
+}
+
+/* Кнопки оффлайн-действий */
+.action-btn.offline-action {
+  background: #ff9800;
+  color: #000;
+}
+.action-btn.offline-action:hover {
+  background: #ffb74d;
+}
+.action-btn.offline-progress {
+  background: #2196f3;
+  color: #fff;
+}
+.action-btn.offline-progress:hover {
+  background: #42a5f5;
+}
+.action-btn.print-complete {
+  background: #4caf50;
+  color: #fff;
+}
+.action-btn.print-complete:hover {
+  background: #66bb6a;
+}
 
 .status-block { margin-bottom: 18px; }
 .status-bar {

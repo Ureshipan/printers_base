@@ -394,6 +394,31 @@ function renderPrintActions(task) {
   const hasGcode = task.gcode?.has_file;
   const hasPrinter = !!task.printer?.id;
 
+  // Проверяем, является ли принтер оффлайн (виртуальным)
+  const printer = printers.find(p => p.id === task.printer?.id);
+  const isOfflinePrinter = printer?.is_virtual || false;
+
+  // Для оффлайн-принтеров - специальные кнопки ручного управления
+  if (isOfflinePrinter && hasPrinter) {
+    if (status === 'pending' || status === 'queued') {
+      return `<button class="action-btn print-start offline-action" data-offline-action="start" data-id="${task.id}" title="Начать (ручной трекинг)">▶ Начать</button>`;
+    }
+    if (status === 'printing') {
+      return `
+        <button class="action-btn offline-progress" data-offline-action="progress" data-id="${task.id}" title="Обновить прогресс">📊</button>
+        <button class="action-btn print-complete" data-offline-action="complete" data-id="${task.id}" title="Завершить">✓</button>
+        <button class="action-btn print-cancel" data-offline-action="cancel" data-id="${task.id}" title="Отменить">✕</button>
+      `;
+    }
+    if (status === 'paused') {
+      return `
+        <button class="action-btn print-resume" data-offline-action="resume" data-id="${task.id}" title="Продолжить">▶</button>
+        <button class="action-btn print-cancel" data-offline-action="cancel" data-id="${task.id}" title="Отменить">✕</button>
+      `;
+    }
+    return '';
+  }
+
   // Кнопка запуска - только для pending/queued с G-code и принтером
   if ((status === 'pending' || status === 'queued') && hasGcode && hasPrinter) {
     return `<button class="action-btn print-start" data-print-action="start" data-id="${task.id}" title="Запустить печать">▶</button>`;
@@ -419,7 +444,7 @@ function renderPrintActions(task) {
 }
 
 function handleRowAction(event) {
-  const actionButton = event.target.closest('[data-action], [data-remove-gcode], [data-download], [data-print-action]');
+  const actionButton = event.target.closest('[data-action], [data-remove-gcode], [data-download], [data-print-action], [data-offline-action]');
   if (!actionButton) {
     return;
   }
@@ -436,6 +461,13 @@ function handleRowAction(event) {
   const printAction = actionButton.dataset.printAction;
   if (printAction) {
     handlePrintAction(printAction, taskId);
+    return;
+  }
+
+  // Обработка оффлайн-действий
+  const offlineAction = actionButton.dataset.offlineAction;
+  if (offlineAction) {
+    handleOfflineAction(offlineAction, taskId);
     return;
   }
 
@@ -1025,3 +1057,198 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('beforeunload', () => {
   stopAutoRefresh();
 });
+
+// ---------------------------------------------------------------------------
+// Offline Task Control Functions (для оффлайн-принтеров)
+// ---------------------------------------------------------------------------
+
+async function handleOfflineAction(action, taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) {
+    showMessage('Задача не найдена', true);
+    return;
+  }
+
+  switch (action) {
+    case 'start':
+      await offlineStartTask(taskId);
+      break;
+    case 'progress':
+      openOfflineProgressModal(taskId);
+      break;
+    case 'complete':
+      await offlineCompleteTask(taskId);
+      break;
+    case 'cancel':
+      if (window.confirm(`Отменить задачу "${task.name || 'Без названия'}"?`)) {
+        await offlineUpdateTask(taskId, { status: 'cancelled' });
+      }
+      break;
+    case 'resume':
+      await offlineUpdateTask(taskId, { status: 'printing' });
+      showMessage('Печать возобновлена');
+      break;
+  }
+}
+
+async function offlineStartTask(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  const confirmed = window.confirm(`Начать ручной трекинг задачи "${task.name || 'Без названия'}"?`);
+  if (!confirmed) return;
+
+  await offlineUpdateTask(taskId, { status: 'printing', progress: 0 });
+  showMessage('Печать начата (ручной трекинг)');
+}
+
+async function offlineCompleteTask(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  let deductMaterial = false;
+  let message = `Завершить задачу "${task.name || 'Без названия'}"?`;
+
+  // Если есть катушка и расход материала - предложить списать
+  if (task.coil?.id && task.estimated_filament) {
+    deductMaterial = window.confirm(
+      `${message}\n\nСписать ${task.estimated_filament.toFixed(1)}г материала с катушки "${task.coil.name}"?`
+    );
+    if (!deductMaterial) {
+      // Спросить подтверждение без списания
+      const justComplete = window.confirm('Завершить без списания материала?');
+      if (!justComplete) return;
+    }
+  } else {
+    if (!window.confirm(message)) return;
+  }
+
+  try {
+    const response = await fetchJson(`/api/tasks/${taskId}/offline/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deduct_material: deductMaterial,
+        amount: task.estimated_filament
+      })
+    });
+
+    if (response.success) {
+      let msg = 'Задача завершена';
+      if (response.material_deducted) {
+        msg += ` (списано ${response.material_deducted.toFixed(1)}г)`;
+      }
+      showMessage(msg);
+      await loadTasks();
+      // Обновляем катушки если был расход
+      if (response.material_deducted) {
+        coils = await fetchJson('/api/coils');
+      }
+    }
+  } catch (error) {
+    showMessage(error.message || 'Ошибка завершения задачи', true);
+  }
+}
+
+async function offlineUpdateTask(taskId, data) {
+  try {
+    const response = await fetchJson(`/api/tasks/${taskId}/offline/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    if (response.success) {
+      await loadTasks();
+      return response;
+    } else {
+      showMessage(response.message || 'Ошибка обновления', true);
+    }
+  } catch (error) {
+    showMessage(error.message || 'Ошибка сети', true);
+  }
+  return null;
+}
+
+// Переменная для хранения текущей оффлайн-задачи при обновлении прогресса
+let currentOfflineTaskId = null;
+
+function openOfflineProgressModal(taskId) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+
+  currentOfflineTaskId = taskId;
+
+  const modal = document.getElementById('offlineProgressModal');
+  if (!modal) {
+    // Модальное окно еще не добавлено в HTML - создаём динамически
+    createOfflineProgressModal();
+  }
+
+  const progressInput = document.getElementById('offlineProgressInput');
+  const progressSlider = document.getElementById('offlineProgressSlider');
+  const taskNameEl = document.getElementById('offlineTaskName');
+
+  if (taskNameEl) taskNameEl.textContent = task.name || 'Без названия';
+  if (progressInput) progressInput.value = task.progress || 0;
+  if (progressSlider) progressSlider.value = task.progress || 0;
+
+  document.getElementById('offlineProgressModal').classList.remove('hidden');
+}
+
+function createOfflineProgressModal() {
+  const modal = document.createElement('div');
+  modal.id = 'offlineProgressModal';
+  modal.className = 'modal-backdrop hidden';
+  modal.innerHTML = `
+    <div class="modal-window">
+      <div class="modal-header">
+        <h2>Обновить прогресс</h2>
+        <button class="close-btn" onclick="closeOfflineProgressModal()" aria-label="Закрыть">&times;</button>
+      </div>
+      <div class="modal-content">
+        <p>Задача: <strong id="offlineTaskName"></strong></p>
+        <div class="form-row">
+          <label>Прогресс (%)</label>
+          <div class="progress-input-group">
+            <input type="number" id="offlineProgressInput" min="0" max="100" value="0">
+            <input type="range" id="offlineProgressSlider" min="0" max="100" value="0" class="progress-slider">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="ghost-btn" onclick="closeOfflineProgressModal()">Отмена</button>
+        <button class="primary-btn" onclick="submitOfflineProgress()">Сохранить</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Синхронизация слайдера и инпута
+  const progressInput = document.getElementById('offlineProgressInput');
+  const progressSlider = document.getElementById('offlineProgressSlider');
+  progressInput.addEventListener('input', () => { progressSlider.value = progressInput.value; });
+  progressSlider.addEventListener('input', () => { progressInput.value = progressSlider.value; });
+
+  // Закрытие по клику на фон
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeOfflineProgressModal();
+  });
+}
+
+function closeOfflineProgressModal() {
+  const modal = document.getElementById('offlineProgressModal');
+  if (modal) modal.classList.add('hidden');
+  currentOfflineTaskId = null;
+}
+
+async function submitOfflineProgress() {
+  if (!currentOfflineTaskId) return;
+
+  const progressInput = document.getElementById('offlineProgressInput');
+  const progress = parseInt(progressInput.value, 10) || 0;
+
+  await offlineUpdateTask(currentOfflineTaskId, { progress: Math.max(0, Math.min(100, progress)) });
+  showMessage('Прогресс обновлён');
+  closeOfflineProgressModal();
+}

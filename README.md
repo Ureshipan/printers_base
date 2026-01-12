@@ -29,8 +29,12 @@ python -m backend.api.web_interface
 - Состояние/команды:  
   - `GET /api/state?printer_id=<id>` — текущее состояние.  
   - `POST /api/command|home|temperature` — команды с `printer_id` в теле.  
-- Задачи/проекты/катушки: `GET/POST/PATCH/DELETE /api/tasks`, `/api/projects`, `/api/coils`.  
+- Задачи/проекты/катушки: `GET/POST/PATCH/DELETE /api/tasks`, `/api/projects`, `/api/coils`.
 - G-code: `POST/GET/DELETE /api/tasks/<id>/gcode`.
+- Оффлайн-задачи (для виртуальных принтеров):
+  - `POST /api/tasks/<id>/offline/update` — смена статуса и прогресса задачи.
+  - `POST /api/tasks/<id>/offline/complete` — завершение с опциональным списанием материала.
+  - `POST /api/tasks/<id>/offline/deduct-material` — ручное списание материала с катушки.
 
 ## Переменные окружения
 - `MOONRAKER_PORT` — порт Moonraker (по умолчанию `7125`).  
@@ -44,12 +48,47 @@ python -m backend.api.web_interface
 - Таблица `printers` поддерживает физические и виртуальные устройства (`is_virtual`, `virtual_status`).  
 - Таблицы задач/проектов/катушек/материалов создаются и мигрируются автоматически при старте.
 
-## Добавление виртуального принтера (пример)
+## Виртуальные (оффлайн) принтеры
+Виртуальные принтеры — это принтеры без подключения к Moonraker, где все данные вводятся вручную.
+
+### Создание
 Через дашборд кнопкой «Виртуальный» или API:
 ```bash
 curl -X POST http://localhost:5000/api/printers/virtual \
   -H "Content-Type: application/json" \
-  -d '{"name":"Demo Printer","status":"work"}'
+  -d '{"name":"Demo Printer","status":"idle"}'
+```
+
+### Ручное обновление данных
+Для оффлайн-принтеров можно задать имя файла и прогресс печати:
+```bash
+curl -X PUT http://localhost:5000/api/printers/1 \
+  -H "Content-Type: application/json" \
+  -d '{"manual_filename":"model.gcode","manual_progress":45}'
+```
+
+### Ведение задачи вручную
+Пример полного цикла оффлайн-задачи:
+```bash
+# Создать задачу на оффлайн-принтере
+curl -X POST http://localhost:5000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"printer_id":1,"name":"Тестовая деталь"}'
+
+# Начать печать (pending → printing)
+curl -X POST http://localhost:5000/api/tasks/1/offline/update \
+  -H "Content-Type: application/json" \
+  -d '{"status":"printing"}'
+
+# Обновить прогресс
+curl -X POST http://localhost:5000/api/tasks/1/offline/update \
+  -H "Content-Type: application/json" \
+  -d '{"progress":75}'
+
+# Завершить задачу (с опциональным списанием материала)
+curl -X POST http://localhost:5000/api/tasks/1/offline/complete \
+  -H "Content-Type: application/json" \
+  -d '{"deduct_material":true,"material_grams":50}'
 ```
 
 ## Примечания
