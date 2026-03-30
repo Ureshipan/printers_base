@@ -60,6 +60,7 @@ class TestPrintStartRaceCondition:
     def test_concurrent_print_start_second_gets_409(self, client, db, monkeypatch):
         """Два одновременных POST /print/start — второй должен вернуть 409."""
         from backend.api import web_interface
+        from backend.api.blueprints import print_control as bp_pc
 
         # Создаём принтер и задачу
         printer = db.add_printer(
@@ -83,20 +84,21 @@ class TestPrintStartRaceCondition:
 
         db.update_task(task_id, status="pending", model_gcode=gcode_filename)
 
-        # Принтер online, idle
+        # Принтер online, idle — патчим и в web_interface, и в blueprint
+        test_state = {
+            "status": "standby",
+            "temperature": {"extruder": 0.0, "bed": 0.0},
+            "progress": 0,
+            "filename": None,
+        }
         with web_interface.printer_state_lock:
-            web_interface.printer_states[printer_id] = {
-                "status": "standby",
-                "temperature": {"extruder": 0.0, "bed": 0.0},
-                "progress": 0,
-                "filename": None,
-            }
+            web_interface.printer_states[printer_id] = test_state
+        # Blueprint использует свою привязку printer_states — синхронизируем
+        bp_pc.printer_states[printer_id] = test_state
 
         # Мокаем upload и start — upload медленный (имитация race condition)
         barrier = threading.Barrier(2, timeout=10)
         call_count = {"upload": 0, "start": 0}
-
-        original_upload = web_interface.upload_gcode_to_printer
 
         def slow_upload(printer, local_path, filename):
             call_count["upload"] += 1
@@ -114,6 +116,9 @@ class TestPrintStartRaceCondition:
 
         monkeypatch.setattr(web_interface, "upload_gcode_to_printer", slow_upload)
         monkeypatch.setattr(web_interface, "start_print_on_printer", mock_start)
+        # Патчим и blueprint-модуль (у него своя привязка через from...import)
+        monkeypatch.setattr(bp_pc, "upload_gcode_to_printer", slow_upload)
+        monkeypatch.setattr(bp_pc, "start_print_on_printer", mock_start)
 
         results = []
 

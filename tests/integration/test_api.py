@@ -68,9 +68,12 @@ class TestPrintersAPI:
     def test_create_real_printer(self, client, monkeypatch):
         """Создание реального принтера (мокаем probe + upsert)."""
         from backend.api import web_interface
+        from backend.api.blueprints import printers as bp_printers
         from backend.db.data_model import Printer
 
-        monkeypatch.setattr(web_interface, "probe_moonraker_host", lambda *a, **kw: True)
+        mock_probe = lambda *a, **kw: True  # noqa: E731
+        monkeypatch.setattr(web_interface, "probe_moonraker_host", mock_probe)
+        monkeypatch.setattr(bp_printers, "probe_moonraker_host", mock_probe)
 
         # upsert_printers_for_host возвращает список Printer
         def mock_upsert(host, port):
@@ -78,6 +81,7 @@ class TestPrintersAPI:
             return [printer]
 
         monkeypatch.setattr(web_interface, "upsert_printers_for_host", mock_upsert)
+        monkeypatch.setattr(bp_printers, "upsert_printers_for_host", mock_upsert)
 
         resp = client.post("/api/printers", json={
             "host": "192.168.1.100",

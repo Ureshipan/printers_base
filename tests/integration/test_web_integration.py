@@ -89,9 +89,12 @@ class TestHealthEndpoint:
     def test_health_endpoint_returns_ok(self, client, monkeypatch):
         """GET /api/health возвращает status=ok."""
         from backend.api import web_interface
+        from backend.api.blueprints import control as bp_control
 
-        # Подставляем пустой реестр
-        monkeypatch.setattr(web_interface, "health_registry", HealthRegistry())
+        # Подставляем пустой реестр во все модули
+        empty_registry = HealthRegistry()
+        monkeypatch.setattr(web_interface, "health_registry", empty_registry)
+        monkeypatch.setattr(bp_control, "health_registry", empty_registry)
 
         resp = client.get("/api/health")
         assert resp.status_code == 200
@@ -103,6 +106,7 @@ class TestHealthEndpoint:
     def test_health_endpoint_shows_circuit_state(self, client, monkeypatch):
         """GET /api/health показывает состояние circuit breaker для принтеров."""
         from backend.api import web_interface
+        from backend.api.blueprints import control as bp_control
 
         registry = HealthRegistry()
         # Создаём состояние принтера с открытым circuit
@@ -110,8 +114,12 @@ class TestHealthEndpoint:
         for _ in range(5):
             hs.record_failure()
 
+        test_states = {1: {"status": "offline"}}
         monkeypatch.setattr(web_interface, "health_registry", registry)
-        monkeypatch.setattr(web_interface, "printer_states", {1: {"status": "offline"}})
+        monkeypatch.setattr(web_interface, "printer_states", test_states)
+        # Патчим и blueprint-модуль (у него своя локальная привязка)
+        monkeypatch.setattr(bp_control, "health_registry", registry)
+        monkeypatch.setattr(bp_control, "printer_states", test_states)
 
         resp = client.get("/api/health")
         data = resp.get_json()
