@@ -235,6 +235,14 @@ function updatePrinterStats(printers) {
   if (statError) statError.textContent = stats.error;
   if (statService) statService.textContent = stats.service;
   if (statOffline) statOffline.textContent = stats.offline;
+
+  // Обновляем ширину полосок статус-бара
+  const total = printers.length || 1;
+  document.querySelectorAll('.bar-work').forEach(el => el.style.flex = stats.work / total);
+  document.querySelectorAll('.bar-idle').forEach(el => el.style.flex = stats.idle / total);
+  document.querySelectorAll('.bar-error').forEach(el => el.style.flex = stats.error / total);
+  document.querySelectorAll('.bar-service').forEach(el => el.style.flex = stats.service / total);
+  document.querySelectorAll('.bar-offline').forEach(el => el.style.flex = stats.offline / total);
 }
 
 function renderMaterials(coils) {

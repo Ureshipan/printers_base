@@ -307,9 +307,18 @@ def fetch_printer_state(printer: Printer) -> Dict:
         # Проверяем состояние Klipper через webhooks
         klipper_state = webhooks.get("state", "unknown")
         if klipper_state != "ready":
-            # Klipper не готов (startup, shutdown, error)
-            state["status"] = "offline" if klipper_state == "shutdown" else "error"
-            state["status_message"] = webhooks.get("state_message", "")
+            state_message = webhooks.get("state_message", "")
+            if klipper_state == "shutdown":
+                state["status"] = "offline"
+            elif klipper_state == "error" and "Unable to connect" in state_message:
+                # MCU недоступен — принтер физически выключен
+                state["status"] = "offline"
+            elif klipper_state == "startup":
+                # Klipper загружается
+                state["status"] = "offline"
+            else:
+                state["status"] = "error"
+            state["status_message"] = state_message
             return state
 
         state["status"] = print_stats.get("state", "standby")
