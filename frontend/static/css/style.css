@@ -197,6 +197,13 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 68, 136, 0.7); }
   50% { box-shadow: 0 0 20px 5px rgba(255, 68, 136, 0.5); }
 }
+/* Цветные обводки по статусу принтера */
+.printer-card.is-idle {
+  border: 2px solid #4080ff;
+}
+.printer-card.is-working {
+  border: 2px solid #40cc60;
+}
 .printer-card.has-error {
   animation: error-pulse 1.5s ease-in-out infinite;
   border: 2px solid #ff4488;

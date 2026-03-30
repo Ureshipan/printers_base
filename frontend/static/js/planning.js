@@ -154,7 +154,7 @@ function populateSelectOptions() {
   const printerSelect = taskForm.elements['printer_id'];
   const coilSelect = taskForm.elements['coil_id'];
 
-  projectSelect.innerHTML = '<option value=\"\">Выберите проект</option>';
+  projectSelect.innerHTML = '<option value="">Без проекта</option>';
   projects.forEach(project => {
     const option = document.createElement('option');
     option.value = project.id;

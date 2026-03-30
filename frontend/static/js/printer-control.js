@@ -1,7 +1,7 @@
 let currentDistance = 0.1;
 let updateInterval;
-let extruderTempValue = 210; // Храним значение температуры экструдера
-let bedTempValue = 60; // Храним значение температуры стола
+let extruderTempValue = 0; // Храним значение температуры экструдера (0 = не задана)
+let bedTempValue = 0; // Храним значение температуры стола (0 = не задана)
 let selectedPrinterId = null;
 let printersCache = [];
 
@@ -140,7 +140,7 @@ async function loadPrinters(dropdown, titleEl, statusEl, body) {
   selectPrinter(printersCache[0].id, titleEl, statusEl, body, dropdown);
 }
 
-function selectPrinter(printerId, titleEl, statusEl, body, dropdown) {
+async function selectPrinter(printerId, titleEl, statusEl, body, dropdown) {
   selectedPrinterId = printerId;
   const printer = printersCache.find(p => p.id === printerId);
   if (!printer) {
@@ -160,7 +160,6 @@ function selectPrinter(printerId, titleEl, statusEl, body, dropdown) {
     if (maintenanceModal) {
       maintenanceModal.style.display = 'flex';
     }
-    // Обновляем статус на "Требуется обслуживание"
     statusEl.textContent = 'Требуется обслуживание';
     statusEl.className = 'printer-status status-maintenance';
   }
@@ -173,11 +172,11 @@ function selectPrinter(printerId, titleEl, statusEl, body, dropdown) {
   isFirstUpdate = true;
   lastKnownStatus = null;
 
-  // Обновляем сразу состояние выбранного принтера
-  updatePrinterState();
-
-  // Загружаем задачи для этого принтера
-  loadTasksForPrinter(printerId);
+  // Загружаем состояние и задачи параллельно, ждём завершения
+  await Promise.all([
+    updatePrinterState(),
+    loadTasksForPrinter(printerId),
+  ]);
 }
 
 function updatePrinterStatusText(statusEl, status, percent = 0) {

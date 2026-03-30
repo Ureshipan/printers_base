@@ -173,6 +173,8 @@ function renderPrinters(printers) {
     let cardClass = isOffline ? 'printer-card offline' : 'printer-card';
     if (needsMaintenance && !isOffline) cardClass += ' needs-maintenance';
     if (isError) cardClass += ' has-error';
+    else if (p.status === 'work' || p.status === 'printing') cardClass += ' is-working';
+    else if (p.status === 'idle' || p.status === 'paused') cardClass += ' is-idle';
     if (isAwaitingRemoval) cardClass += ' awaiting-removal';
     if (isVirtualPrinter) cardClass += ' offline-manual';
 
@@ -417,6 +419,19 @@ document.addEventListener('DOMContentLoaded', async function() {
   renderMaterials(coils);
   const tasks = await fetchTasks();
   renderQueue(tasks);
+
+  // Автообновление данных каждые 5 секунд
+  setInterval(async () => {
+    try {
+      const updatedPrinters = await fetchPrinters();
+      renderPrinters(updatedPrinters);
+      updatePrinterStats(updatedPrinters);
+      const updatedTasks = await fetchTasks();
+      renderQueue(updatedTasks);
+    } catch (e) {
+      console.error('Ошибка автообновления:', e);
+    }
+  }, 5000);
 
   const addPrinterModal = document.getElementById('addPrinterModal');
   const openAddPrinterBtn = document.getElementById('openAddPrinterBtn');
