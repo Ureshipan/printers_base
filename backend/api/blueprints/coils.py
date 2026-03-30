@@ -182,9 +182,9 @@ def api_coil_unarchive(coil_id: int):
 def api_coil_adjust(coil_id: int):
     """Ручная корректировка остатка катушки."""
     data = request.get_json(force=True, silent=True) or {}
-    new_remains = data.get('remains')
+    new_remains = data.get('new_remains') or data.get('remains')
     if new_remains is None:
-        return jsonify({"success": False, "message": "Поле remains обязательно"}), 400
+        return jsonify({"success": False, "message": "Поле new_remains обязательно"}), 400
 
     coil = db.adjust_coil_remains(coil_id, new_remains, notes=data.get('notes'))
     if coil:
@@ -203,6 +203,8 @@ def api_coil_history(coil_id: int):
             "used_weight": h.used_weight,
             "timestamp": h.timestamp.isoformat() if h.timestamp else None,
             "notes": h.notes,
+            "task_id": h.task.id if h.task else None,
+            "task_name": h.task.name if h.task else None,
             "task": {"id": h.task.id, "name": h.task.name} if h.task else None,
         }
         for h in history
