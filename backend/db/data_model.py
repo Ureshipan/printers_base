@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -12,11 +13,13 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    event,
     text,
 )
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import joinedload, relationship, sessionmaker
+from sqlalchemy.orm import declarative_base, joinedload, relationship, sessionmaker
+
+logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
@@ -247,10 +250,36 @@ class DBModel:
     def __init__(self, db_path: str = 'database.db'):
         self.db_path = db_path
         db_exists = os.path.exists(self.db_path)
-        self.engine = create_engine(f'sqlite:///{self.db_path}')
+        self.engine = create_engine(
+            f'sqlite:///{self.db_path}',
+            pool_size=10,
+            max_overflow=5,
+            pool_timeout=30,
+            pool_recycle=3600,
+            connect_args={
+                "check_same_thread": False,
+                "timeout": 15,
+            },
+        )
+
+        # PRAGMA-оптимизации для каждого нового соединения
+        @event.listens_for(self.engine, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA cache_size=-8000")  # 8 MB
+            cursor.execute("PRAGMA temp_store=MEMORY")
+            cursor.execute("PRAGMA mmap_size=67108864")  # 64 MB
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+
         if not db_exists:
+            logger.info("Создание новой БД: %s", self.db_path)
             Base.metadata.create_all(self.engine)
         else:
+            logger.info("Подключение к существующей БД: %s", self.db_path)
             Base.metadata.create_all(self.engine)
             self._ensure_schema()
         self.Session = sessionmaker(bind=self.engine)
@@ -436,7 +465,7 @@ class DBModel:
     def set_printer_active(self, printer_id: int, is_active: bool):
         session = self.get_session()
         try:
-            printer = session.query(Printer).get(printer_id)
+            printer = session.get(Printer, printer_id)
             if not printer:
                 return
             printer.is_active = is_active
@@ -449,7 +478,7 @@ class DBModel:
     def get_printer_by_id(self, printer_id: int) -> Optional[Printer]:
         session = self.get_session()
         try:
-            return session.query(Printer).get(printer_id)
+            return session.get(Printer, printer_id)
         finally:
             session.close()
 
@@ -466,7 +495,7 @@ class DBModel:
     def delete_printer(self, printer_id: int) -> bool:
         session = self.get_session()
         try:
-            printer = session.query(Printer).get(printer_id)
+            printer = session.get(Printer, printer_id)
             if not printer:
                 return False
             session.delete(printer)
@@ -479,7 +508,7 @@ class DBModel:
         """Обновление принтера по ID."""
         session = self.get_session()
         try:
-            printer = session.query(Printer).get(printer_id)
+            printer = session.get(Printer, printer_id)
             if not printer:
                 return None
             data = self._filter_model_kwargs(Printer, kwargs)
@@ -537,7 +566,7 @@ class DBModel:
         """Получить производителя по ID."""
         session = self.get_session()
         try:
-            return session.query(Vendor).get(vendor_id)
+            return session.get(Vendor, vendor_id)
         finally:
             session.close()
 
@@ -545,7 +574,7 @@ class DBModel:
         """Обновить производителя."""
         session = self.get_session()
         try:
-            vendor = session.query(Vendor).get(vendor_id)
+            vendor = session.get(Vendor, vendor_id)
             if not vendor:
                 return None
             data = self._filter_model_kwargs(Vendor, kwargs)
@@ -561,13 +590,14 @@ class DBModel:
         """Удалить производителя."""
         session = self.get_session()
         try:
-            vendor = session.query(Vendor).get(vendor_id)
+            vendor = session.get(Vendor, vendor_id)
             if not vendor:
                 return False
             session.delete(vendor)
             session.commit()
             return True
         except SQLAlchemyError:
+            logger.exception("Ошибка удаления производителя id=%s", vendor_id)
             session.rollback()
             return False
         finally:
@@ -607,9 +637,10 @@ class DBModel:
         """Получить филамент по ID."""
         session = self.get_session()
         try:
-            return session.query(Filament).options(
-                joinedload(Filament.vendor)
-            ).get(filament_id)
+            return session.get(
+                Filament, filament_id,
+                options=[joinedload(Filament.vendor)],
+            )
         finally:
             session.close()
 
@@ -617,7 +648,7 @@ class DBModel:
         """Обновить филамент."""
         session = self.get_session()
         try:
-            filament = session.query(Filament).get(filament_id)
+            filament = session.get(Filament, filament_id)
             if not filament:
                 return None
             data = self._filter_model_kwargs(Filament, kwargs)
@@ -633,13 +664,14 @@ class DBModel:
         """Удалить филамент."""
         session = self.get_session()
         try:
-            filament = session.query(Filament).get(filament_id)
+            filament = session.get(Filament, filament_id)
             if not filament:
                 return False
             session.delete(filament)
             session.commit()
             return True
         except SQLAlchemyError:
+            logger.exception("Ошибка удаления филамента id=%s", filament_id)
             session.rollback()
             return False
         finally:
@@ -691,15 +723,14 @@ class DBModel:
         """Получить катушку по ID с загрузкой связей."""
         session = self.get_session()
         try:
-            return (
-                session.query(Coil)
-                .options(
+            return session.get(
+                Coil, coil_id,
+                options=[
                     joinedload(Coil.filament).joinedload(Filament.vendor),
                     joinedload(Coil.material),
                     joinedload(Coil.vendor),
                     joinedload(Coil.history),
-                )
-                .get(coil_id)
+                ],
             )
         finally:
             session.close()
@@ -708,7 +739,7 @@ class DBModel:
         """Обновить катушку."""
         session = self.get_session()
         try:
-            coil = session.query(Coil).get(coil_id)
+            coil = session.get(Coil, coil_id)
             if not coil:
                 return None
             data = self._filter_model_kwargs(Coil, kwargs)
@@ -724,13 +755,14 @@ class DBModel:
         """Удалить катушку."""
         session = self.get_session()
         try:
-            coil = session.query(Coil).get(coil_id)
+            coil = session.get(Coil, coil_id)
             if not coil:
                 return False
             session.delete(coil)
             session.commit()
             return True
         except SQLAlchemyError:
+            logger.exception("Ошибка удаления катушки id=%s", coil_id)
             session.rollback()
             return False
         finally:
@@ -749,7 +781,7 @@ class DBModel:
         """Ручная корректировка остатка катушки с записью в историю."""
         session = self.get_session()
         try:
-            coil = session.query(Coil).get(coil_id)
+            coil = session.get(Coil, coil_id)
             if not coil:
                 return None
 
@@ -814,7 +846,7 @@ class DBModel:
         """Удалить запись из истории."""
         session = self.get_session()
         try:
-            history = session.query(SpoolHistory).get(history_id)
+            history = session.get(SpoolHistory, history_id)
             if not history:
                 return False
             session.delete(history)
@@ -828,7 +860,7 @@ class DBModel:
         """Списать материал с катушки (автоматическое при завершении задачи)."""
         session = self.get_session()
         try:
-            coil = session.query(Coil).get(coil_id)
+            coil = session.get(Coil, coil_id)
             if not coil:
                 return None
 
@@ -874,7 +906,7 @@ class DBModel:
     def update_project(self, project_id: int, **kwargs) -> Optional[Project]:
         session = self.get_session()
         try:
-            project = session.query(Project).get(project_id)
+            project = session.get(Project, project_id)
             if not project:
                 return None
             data = self._filter_model_kwargs(Project, kwargs)
@@ -889,7 +921,7 @@ class DBModel:
     def delete_project(self, project_id: int) -> bool:
         session = self.get_session()
         try:
-            project = session.query(Project).get(project_id)
+            project = session.get(Project, project_id)
             if not project:
                 return False
             try:
@@ -897,6 +929,7 @@ class DBModel:
                 session.commit()
                 return True
             except SQLAlchemyError:
+                logger.exception("Ошибка удаления проекта id=%s", project_id)
                 session.rollback()
                 return False
         finally:
@@ -912,7 +945,7 @@ class DBModel:
     def get_project(self, project_id: int) -> Optional[Project]:
         session = self.get_session()
         try:
-            return session.query(Project).get(project_id)
+            return session.get(Project, project_id)
         finally:
             session.close()
 
@@ -936,7 +969,7 @@ class DBModel:
     def update_task(self, task_id: int, **kwargs) -> Optional[Task]:
         session = self.get_session()
         try:
-            task = session.query(Task).get(task_id)
+            task = session.get(Task, task_id)
             if not task:
                 return None
             data = self._filter_model_kwargs(Task, kwargs)
@@ -952,7 +985,7 @@ class DBModel:
     def delete_task(self, task_id: int) -> bool:
         session = self.get_session()
         try:
-            task = session.query(Task).get(task_id)
+            task = session.get(Task, task_id)
             if not task:
                 return False
             session.delete(task)
@@ -979,14 +1012,13 @@ class DBModel:
     def get_task(self, task_id: int) -> Optional[Task]:
         session = self.get_session()
         try:
-            return (
-                session.query(Task)
-                .options(
+            return session.get(
+                Task, task_id,
+                options=[
                     joinedload(Task.project),
                     joinedload(Task.printer),
                     joinedload(Task.coil).joinedload(Coil.material),
-                )
-                .get(task_id)
+                ],
             )
         finally:
             session.close()
@@ -1040,7 +1072,7 @@ class DBModel:
         """Обновить интервал или описание типа обслуживания."""
         session = self.get_session()
         try:
-            mt = session.query(MaintenanceType).get(type_id)
+            mt = session.get(MaintenanceType, type_id)
             if not mt:
                 return None
             for key, value in kwargs.items():
@@ -1057,7 +1089,7 @@ class DBModel:
         """Добавить запись о выполненном обслуживании."""
         session = self.get_session()
         try:
-            printer = session.query(Printer).get(printer_id)
+            printer = session.get(Printer, printer_id)
             if not printer:
                 raise ValueError(f"Принтер {printer_id} не найден")
 
@@ -1108,7 +1140,7 @@ class DBModel:
         """Удалить запись обслуживания."""
         session = self.get_session()
         try:
-            record = session.query(MaintenanceRecord).get(record_id)
+            record = session.get(MaintenanceRecord, record_id)
             if not record:
                 return False
             session.delete(record)
@@ -1134,7 +1166,7 @@ class DBModel:
         """Создать начальные записи обслуживания для принтера если их нет."""
         session = self.get_session()
         try:
-            printer = session.query(Printer).get(printer_id)
+            printer = session.get(Printer, printer_id)
             if not printer:
                 return
 
@@ -1173,7 +1205,7 @@ class DBModel:
         """Получить статус обслуживания принтера."""
         session = self.get_session()
         try:
-            printer = session.query(Printer).get(printer_id)
+            printer = session.get(Printer, printer_id)
             if not printer:
                 return {}
 

@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import requests
-import json
 import time
 import argparse
 import sys

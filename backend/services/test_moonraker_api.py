@@ -6,7 +6,6 @@ import json
 import time
 import websocket
 import threading
-import sys
 
 # Конфигурация
 MOONRAKER_URL = "http://192.168.10.14:7125"

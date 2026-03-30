@@ -209,3 +209,19 @@ __marimo__/
 
 
 uploads/
+
+# G-code uploads (keep directory)
+backend/uploads/gcode/*
+!backend/uploads/gcode/.gitkeep
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# IDE
+.vscode/
+.idea/
+
+# Test G-code files
+*.gcode

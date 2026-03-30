@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import threading
@@ -6,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import (
     Flask,
     jsonify,
@@ -14,8 +16,17 @@ from flask import (
     send_file,
     url_for,
 )
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+
+# Конфигурация structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 # Add the project root to the Python path
 PROJECT_ROOT = os.path.dirname(
@@ -26,8 +37,9 @@ sys.path.append(PROJECT_ROOT)
 if os.path.exists(os.path.join(PROJECT_ROOT, ".env")):
     load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
-from backend.db.data_model import DBModel, Coil, Printer, Project, Task, MaintenanceType, MaintenanceRecord, Vendor, SpoolHistory  # noqa: E402
+from backend.db.data_model import DBModel, Coil, Printer, Project, Task, MaintenanceType, MaintenanceRecord  # noqa: E402
 from backend.services.gcode_parser import parse_gcode_file  # noqa: E402
+from backend.services.health import HealthRegistry  # noqa: E402
 
 
 app = Flask(
@@ -58,6 +70,21 @@ http = requests.Session()
 
 printer_states: Dict[int, Dict] = {}
 printer_state_lock = threading.Lock()
+health_registry = HealthRegistry()
+
+# Per-printer locks для защиты от одновременного запуска печати
+_printer_action_locks: Dict[int, threading.Lock] = {}
+_printer_action_locks_lock = threading.Lock()  # Lock для создания per-printer locks
+
+
+def _get_printer_lock(printer_id: int) -> threading.Lock:
+    """Получить lock для конкретного принтера (thread-safe)."""
+    with _printer_action_locks_lock:
+        if printer_id not in _printer_action_locks:
+            _printer_action_locks[printer_id] = threading.Lock()
+        return _printer_action_locks[printer_id]
+
+_executor = ThreadPoolExecutor(max_workers=10)
 
 # Примечание: статус подтверждения уборки хранится в БД (Printer.removal_confirmed)
 
@@ -104,6 +131,12 @@ def enrich_params_with_printer(printer: Printer, params: Optional[List[Tuple[str
     return params_list
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout)),
+    reraise=True,
+)
 def _perform_moonraker_request(
     base_url: str,
     endpoint: str,
@@ -112,6 +145,7 @@ def _perform_moonraker_request(
     payload: Optional[dict] = None,
     timeout: int = 5,
 ):
+    """HTTP запрос к Moonraker с retry (tenacity)."""
     if method == "GET":
         return http.get(f"{base_url}/{endpoint}", params=params, timeout=timeout)
     if method == "POST":
@@ -166,24 +200,21 @@ def moonraker_post(printer: Printer, endpoint: str, payload: dict, timeout: int 
 
 
 def fetch_printers_for_host(host: str, port: int) -> List[Dict[str, Optional[str]]]:
+    """Получить список принтеров для хоста Moonraker.
+
+    Каждый экземпляр Moonraker управляет одним принтером (docs/external_api/printer.md).
+    Используем GET /printer/info для получения hostname как display_name.
+    """
     base_url = f"http://{host}:{port}"
+    display_name = None
     try:
-        response = http.get(f"{base_url}/server/printers/list", timeout=5)
+        response = http.get(f"{base_url}/printer/info", timeout=5)
         if response.status_code == 200:
             result = response.json().get("result", {})
-            printers = result.get("printers", [])
-            if printers:
-                return [
-                    {
-                        "moonraker_printer": printer.get("name"),
-                        "display_name": printer.get("description") or printer.get("name"),
-                    }
-                    for printer in printers
-                ]
+            display_name = result.get("hostname")
     except requests.RequestException:
         pass
-    # Fallback single printer configuration
-    return [{"moonraker_printer": None, "display_name": None}]
+    return [{"moonraker_printer": None, "display_name": display_name}]
 
 
 def fetch_printer_display_name(host: str, port: int, printer_name: Optional[str]) -> Optional[str]:
@@ -368,6 +399,7 @@ def fetch_printer_state(printer: Printer) -> Dict:
 
 
 def update_printer_states_loop():
+    """Фоновый поток: параллельный опрос состояний принтеров с circuit breaker."""
     last_discovery = 0
     while True:
         now = time.time()
@@ -375,11 +407,50 @@ def update_printer_states_loop():
             synchronize_printers_with_db()
             last_discovery = now
 
-        active_printers = db.get_printers(include_inactive=False)
-        for printer in active_printers:
-            state = fetch_printer_state(printer)
-            with printer_state_lock:
-                printer_states[printer.id] = state
+        try:
+            active_printers = db.get_printers(include_inactive=False)
+            # Фильтруем принтеры с открытым circuit
+            printers_to_poll = [
+                p for p in active_printers
+                if not health_registry.get(p.id).should_skip()
+            ]
+
+            if printers_to_poll:
+                futures = {
+                    _executor.submit(fetch_printer_state, p): p
+                    for p in printers_to_poll
+                }
+                for future in as_completed(futures, timeout=15):
+                    printer = futures[future]
+                    try:
+                        state = future.result()
+                        with printer_state_lock:
+                            printer_states[printer.id] = state
+                        # Проверяем статус для circuit breaker
+                        if state.get("status") == "offline":
+                            health_registry.get(printer.id).record_failure()
+                        else:
+                            health_registry.get(printer.id).record_success()
+                    except Exception:
+                        logger.exception("Ошибка опроса принтера %s", printer.name)
+                        health_registry.get(printer.id).record_failure()
+                        with printer_state_lock:
+                            printer_states[printer.id] = {
+                                "status": "offline",
+                                "message": "Ошибка опроса",
+                            }
+
+            # Для пропущенных принтеров — ставим offline
+            for p in active_printers:
+                if health_registry.get(p.id).should_skip():
+                    with printer_state_lock:
+                        if p.id not in printer_states:
+                            printer_states[p.id] = {
+                                "status": "offline",
+                                "message": "Circuit breaker open",
+                            }
+        except Exception:
+            logger.exception("Критическая ошибка в update_printer_states_loop")
 
         # Мониторинг печатающихся задач
         try:
@@ -1768,47 +1839,55 @@ def api_task_print_start(task_id: int):
     if printer.is_virtual:
         return jsonify({"success": False, "message": "Нельзя печатать на виртуальном принтере"}), 400
 
-    # Проверяем состояние принтера
-    with printer_state_lock:
-        state = printer_states.get(printer.id, build_default_state())
+    # Per-printer lock: защита от одновременного запуска печати на одном принтере
+    printer_lock = _get_printer_lock(printer.id)
+    if not printer_lock.acquire(timeout=5):
+        return jsonify({"success": False, "message": "Принтер занят другой операцией"}), 409
 
-    if state.get("status") == "offline":
-        return jsonify({"success": False, "message": "Принтер недоступен"}), 400
+    try:
+        # Перепроверяем состояние принтера после получения lock
+        with printer_state_lock:
+            state = printer_states.get(printer.id, build_default_state())
 
-    if state.get("status") == "printing":
-        return jsonify({"success": False, "message": "Принтер уже печатает"}), 400
+        if state.get("status") == "offline":
+            return jsonify({"success": False, "message": "Принтер недоступен"}), 400
 
-    # Путь к локальному файлу
-    local_file_path = os.path.join(UPLOAD_DIR, task.model_gcode)
-    if not os.path.exists(local_file_path):
-        return jsonify({"success": False, "message": "Локальный файл G-code не найден"}), 404
+        if state.get("status") == "printing":
+            return jsonify({"success": False, "message": "Принтер уже печатает"}), 409
 
-    # Имя файла для загрузки на принтер
-    upload_filename = task.gcode_original_name or os.path.basename(task.model_gcode)
+        # Путь к локальному файлу
+        local_file_path = os.path.join(UPLOAD_DIR, task.model_gcode)
+        if not os.path.exists(local_file_path):
+            return jsonify({"success": False, "message": "Локальный файл G-code не найден"}), 404
 
-    # Загружаем файл на принтер
-    success, result = upload_gcode_to_printer(printer, local_file_path, upload_filename)
-    if not success:
-        return jsonify({"success": False, "message": f"Ошибка загрузки файла: {result}"}), 500
+        # Имя файла для загрузки на принтер
+        upload_filename = task.gcode_original_name or os.path.basename(task.model_gcode)
 
-    moonraker_filename = result  # Имя файла на принтере
+        # Загружаем файл на принтер
+        success, result = upload_gcode_to_printer(printer, local_file_path, upload_filename)
+        if not success:
+            return jsonify({"success": False, "message": f"Ошибка загрузки файла: {result}"}), 500
 
-    # Запускаем печать
-    success, msg = start_print_on_printer(printer, moonraker_filename)
-    if not success:
-        return jsonify({"success": False, "message": f"Ошибка запуска печати: {msg}"}), 500
+        moonraker_filename = result  # Имя файла на принтере
 
-    # Обновляем задачу
-    db.update_task(
-        task_id,
-        status='printing',
-        moonraker_filename=moonraker_filename,
-        progress=0,
-        time_start=datetime.now(timezone.utc).isoformat(),
-    )
+        # Запускаем печать
+        success, msg = start_print_on_printer(printer, moonraker_filename)
+        if not success:
+            return jsonify({"success": False, "message": f"Ошибка запуска печати: {msg}"}), 500
 
-    updated_task = db.get_task(task_id)
-    return jsonify({"success": True, "task": serialize_task(updated_task)})
+        # Обновляем задачу
+        db.update_task(
+            task_id,
+            status='printing',
+            moonraker_filename=moonraker_filename,
+            progress=0,
+            time_start=datetime.now(timezone.utc).isoformat(),
+        )
+
+        updated_task = db.get_task(task_id)
+        return jsonify({"success": True, "task": serialize_task(updated_task)})
+    finally:
+        printer_lock.release()
 
 
 @app.route('/api/tasks/<int:task_id>/print/pause', methods=['POST'])
@@ -2286,6 +2365,27 @@ def api_maintenance_force(printer_id: int):
     except Exception as exc:  # pylint: disable=broad-except
         app.logger.error("Ошибка при принудительном требовании обслуживания: %s", exc)
         return jsonify({"success": False, "message": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Health / monitoring
+# ---------------------------------------------------------------------------
+@app.route('/api/health')
+def api_health():
+    """Health check + статусы circuit breaker."""
+    states = health_registry.get_all_states()
+    health_info = {}
+    for pid, hs in states.items():
+        health_info[pid] = {
+            "state": hs.state,
+            "consecutive_failures": hs.consecutive_failures,
+            "circuit_open": hs.circuit_open,
+        }
+    return jsonify({
+        "status": "ok",
+        "printers_total": len(printer_states),
+        "health": health_info,
+    })
 
 
 # ---------------------------------------------------------------------------
