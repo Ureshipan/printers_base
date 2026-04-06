@@ -10,24 +10,14 @@
     <button class="sidebar-btn">Панель управления</button>
     <button class="sidebar-btn active">Управление принтером</button>
     <button class="sidebar-btn">Учет времени</button>
-    <div class="sidebar-bottom">
-      <div class="sidebar-link"><span>⚙️</span> Настройки</div>
-      <div class="sidebar-link"><span>ℹ️</span> Информация</div>
-    </div>
   </aside>
   <main class="dashboard">
     <div class="printer-header">
       <div class="printer-selector">
-        <h1 class="printer-title" id="printerTitle">🖨️ Принтер 1 - ENDER-3 PRO</h1>
-        <div class="printer-dropdown" id="printerDropdown">
-          <div class="dropdown-item" data-printer="1" data-state="working">🖨️ Принтер 1 - ENDER-3 PRO</div>
-          <div class="dropdown-item" data-printer="2" data-state="ready">🖨️ Принтер 2 - CR-10 MINI</div>
-          <div class="dropdown-item" data-printer="3" data-state="finished">🖨️ Принтер 3 - Ender-5 Plus</div>
-          <div class="dropdown-item" data-printer="4" data-state="maintenance">🖨️ Принтер 4 - Prusa MK3S</div>
-          <div class="dropdown-item" data-printer="5" data-state="filament">🖨️ Принтер 5 - Ender-3 V2</div>
-        </div>
+        <h1 class="printer-title" id="printerTitle">🖨️ Выберите принтер</h1>
+        <div class="printer-dropdown" id="printerDropdown"></div>
       </div>
-      <div class="printer-status status-work">В работе • 67%</div>
+      <div class="printer-status status-work" id="printerStatus">Нет данных</div>
     </div>
     
     <!-- Maintenance Warning Modal -->

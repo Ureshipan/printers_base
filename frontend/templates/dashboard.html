@@ -7,32 +7,39 @@
 </head>
 <body>
   <aside class="sidebar">
-    <button class="sidebar-btn active">Панель управления</button>
-    <button class="sidebar-btn">Учет времени</button>
-    <div class="sidebar-bottom">
-      <div class="sidebar-link"><span>⚙️</span> Настройки</div>
-      <div class="sidebar-link"><span>ℹ️</span> Информация</div>
-    </div>
+    <button class="sidebar-btn active" data-route="/">Панель управления</button>
+    <button class="sidebar-btn" data-route="/printer-control">Управление принтером</button>
+    <button class="sidebar-btn" data-route="/planning">Планирование</button>
+    <button class="sidebar-btn" data-route="/maintenance">Обслуживание</button>
+    <button class="sidebar-btn" data-route="/spools">Катушки</button>
   </aside>
   <main class="dashboard">
     <section class="printers-section">
-      <h2>Принтеры</h2>
+      <div class="section-header">
+        <h2>Принтеры</h2>
+        <button class="filter-btn" id="filterErrorsBtn">⚠️ Только ошибки</button>
+        <button class="primary-btn" id="openAddPrinterBtn">+ Добавить принтер</button>
+        <button class="secondary-btn" id="openAddVirtualBtn">+ Виртуальный</button>
+      </div>
       <div class="printers-grid" id="printersGrid"></div>
     </section>
     <section class="stats-section">
       <div class="status-block">
-        <h2>Все (24)</h2>
+        <h2>Все (<span id="statTotal">0</span>)</h2>
         <div class="status-bar">
-          <div class="status-label">В работе</div><div class="bar bar-work"></div><div class="status-value">16</div>
+          <div class="status-label">В работе</div><div class="bar bar-work"></div><div class="status-value" id="statWork">0</div>
         </div>
         <div class="status-bar">
-          <div class="status-label">Простаивает</div><div class="bar bar-idle"></div><div class="status-value">6</div>
+          <div class="status-label">Простаивает</div><div class="bar bar-idle"></div><div class="status-value" id="statIdle">0</div>
         </div>
         <div class="status-bar">
-          <div class="status-label">Ошибка</div><div class="bar bar-error"></div><div class="status-value">1</div>
+          <div class="status-label">Ошибка</div><div class="bar bar-error"></div><div class="status-value" id="statError">0</div>
         </div>
         <div class="status-bar">
-          <div class="status-label">Тех. осмотр</div><div class="bar bar-service"></div><div class="status-value">1</div>
+          <div class="status-label">Тех. осмотр</div><div class="bar bar-service"></div><div class="status-value" id="statService">0</div>
+        </div>
+        <div class="status-bar">
+          <div class="status-label">Офлайн</div><div class="bar bar-offline"></div><div class="status-value" id="statOffline">0</div>
         </div>
       </div>
       <div class="materials-block">
@@ -67,6 +74,163 @@
       </div>
     </section>
   </main>
+
+  <div class="modal-overlay" id="addPrinterModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Добавить принтер</h3>
+        <button class="icon-btn" id="closeAddPrinterBtn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="addPrinterForm" class="modal-body">
+        <label class="modal-field">
+          <span>IP адрес</span>
+          <input type="text" id="printerIpInput" placeholder="192.168.0.50" required>
+        </label>
+        <label class="modal-field">
+          <span>Порт</span>
+          <input type="number" id="printerPortInput" value="7125" min="1" max="65535" required>
+        </label>
+        <div class="modal-error" id="addPrinterError" role="alert"></div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelAddPrinterBtn">Отмена</button>
+          <button type="submit" class="primary-btn">Добавить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="addVirtualModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Виртуальный принтер</h3>
+        <button class="icon-btn" id="closeAddVirtualBtn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="addVirtualForm" class="modal-body">
+        <label class="modal-field">
+          <span>Имя принтера</span>
+          <input type="text" id="virtualNameInput" placeholder="Демо принтер" required>
+        </label>
+        <label class="modal-field">
+          <span>Статус</span>
+          <select id="virtualStatusInput">
+            <option value="idle">Простаивает</option>
+            <option value="work">В работе</option>
+            <option value="error">Ошибка</option>
+            <option value="service">Тех. осмотр</option>
+          </select>
+        </label>
+        <div class="modal-error" id="addVirtualError" role="alert"></div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelAddVirtualBtn">Отмена</button>
+          <button type="submit" class="primary-btn">Добавить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно редактирования принтера -->
+  <div class="modal-overlay" id="editPrinterModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Редактировать принтер</h3>
+        <button class="icon-btn" id="closeEditPrinterBtn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="editPrinterForm" class="modal-body">
+        <input type="hidden" id="editPrinterId">
+        <label class="modal-field">
+          <span>Название</span>
+          <input type="text" id="editPrinterName" placeholder="Название принтера" required>
+        </label>
+        <label class="modal-field" id="editPrinterHostField">
+          <span>IP адрес</span>
+          <input type="text" id="editPrinterHost" placeholder="192.168.0.50">
+        </label>
+        <label class="modal-field" id="editPrinterPortField">
+          <span>Порт</span>
+          <input type="number" id="editPrinterPort" value="7125" min="1" max="65535">
+        </label>
+        <label class="modal-field" id="editPrinterStatusField" style="display:none;">
+          <span>Статус</span>
+          <select id="editPrinterStatus">
+            <option value="idle">Простаивает</option>
+            <option value="work">В работе</option>
+            <option value="paused">Пауза</option>
+            <option value="error">Ошибка</option>
+            <option value="service">Тех. осмотр</option>
+            <option value="offline">Офлайн</option>
+          </select>
+        </label>
+        <!-- Поля для оффлайн-принтеров -->
+        <div id="offlineFieldsGroup" style="display:none;">
+          <label class="modal-field">
+            <span>Имя файла/модели</span>
+            <input type="text" id="editPrinterFilename" placeholder="model.gcode">
+          </label>
+          <label class="modal-field">
+            <span>Прогресс печати (%)</span>
+            <div class="progress-input-group">
+              <input type="number" id="editPrinterProgress" min="0" max="100" value="0">
+              <input type="range" id="editPrinterProgressSlider" min="0" max="100" value="0" class="progress-slider">
+            </div>
+          </label>
+        </div>
+        <label class="modal-field" id="editPrinterNozzleField">
+          <span>Диаметр сопла (мм)</span>
+          <select id="editPrinterNozzle">
+            <option value="0.2">0.2</option>
+            <option value="0.4">0.4</option>
+            <option value="0.6">0.6</option>
+            <option value="0.8">0.8</option>
+            <option value="1.0">1.0</option>
+          </select>
+        </label>
+        <div class="modal-error" id="editPrinterError" role="alert"></div>
+        <div class="modal-actions">
+          <button type="button" class="danger-btn" id="deletePrinterBtn">Удалить</button>
+          <button type="button" class="secondary-btn" id="cancelEditPrinterBtn">Отмена</button>
+          <button type="submit" class="primary-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно подтверждения уборки детали -->
+  <div class="modal-overlay" id="removalModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Печать завершена!</h3>
+        <button class="icon-btn" id="closeRemovalBtn" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Принтер <strong id="removalPrinterName"></strong> завершил печать.</p>
+        <p style="color: #ff9800;">Пожалуйста, уберите деталь со стола и подтвердите.</p>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelRemovalBtn">Позже</button>
+          <button type="button" class="primary-btn" id="confirmRemovalBtn">✓ Деталь убрана</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно подтверждения удаления -->
+  <div class="modal-overlay" id="confirmDeleteModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Подтвердите удаление</h3>
+        <button class="icon-btn" id="closeConfirmDeleteBtn" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Вы уверены, что хотите удалить принтер <strong id="deletePrinterName"></strong>?</p>
+        <p style="color: #ff6b6b; font-size: 0.9em;">Это действие нельзя отменить.</p>
+        <div class="modal-error" id="deleteError" role="alert"></div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelDeleteBtn">Отмена</button>
+          <button type="button" class="danger-btn" id="confirmDeleteBtn">Удалить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="../static/js/script.js"></script>
 </body>
 </html>

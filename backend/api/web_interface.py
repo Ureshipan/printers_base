@@ -1,181 +1,83 @@
-from flask import Flask, render_template, jsonify, request
-import requests
-import json
-from datetime import datetime
-import threading
-import time
-import os
-import sys
-from discovery.pi_discover import scan_no_cli
+"""Точка входа PrinterBase.
 
-# Add the project root to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+Для разработки: python -m backend.api.web_interface
+Для Gunicorn:   gunicorn --config gunicorn_config.py backend.api.web_interface:app
+"""
+from backend.api.app import create_app
+from backend.services.background import start_background_threads
 
-app = Flask(__name__, 
-            template_folder='../../frontend/templates',
-            static_folder='../../frontend/static')
+# Создаём app (для Gunicorn и тестов)
+app = create_app()
 
-# Конфигурация
-aviable_printers = scan_no_cli()
-if len(aviable_printers) > 0:
-    PRINTER_HOST = aviable_printers[0]
-else:
-    PRINTER_HOST = "172.22.112.68"
-PRINTER_PORT = "7125"
-BASE_URL = f"http://{PRINTER_HOST}:{PRINTER_PORT}"
+# ---------------------------------------------------------------------------
+# Re-exports для обратной совместимости (тесты и другие модули импортируют отсюда)
+# ---------------------------------------------------------------------------
+from backend.api.state import (  # noqa: F401,E402
+    db,
+    http,
+    printer_states,
+    printer_state_lock,
+    health_registry,
+    _printer_action_locks,
+    _printer_action_locks_lock,
+    _get_printer_lock,
+    DEFAULT_PRINTER_PORT,
+    DEFAULT_FALLBACK_HOST,
+    DISCOVERY_ENABLED,
+    DISCOVERY_INTERVAL_SECONDS,
+    PRINTER_STATE_INTERVAL,
+    ALLOWED_GCODE_EXTENSIONS,
+    ALLOWED_VIRTUAL_STATUSES,
+    DATABASE_PATH,
+    UPLOAD_DIR,
+    STATE_MAP,
+)
 
-# Глобальные переменные для хранения состояния
-printer_state = {
-    "status": "Неизвестно",
-    "temperature": {"extruder": 0, "bed": 0},
-    "target_temperature": {"extruder": 0, "bed": 0},
-    "position": {"x": 0, "y": 0, "z": 0},
-    "last_update": None
-}
+from backend.services.moonraker_client import (  # noqa: F401,E402
+    build_printer_key,
+    build_base_url,
+    enrich_params_with_printer,
+    _perform_moonraker_request,
+    _request_with_fallback,
+    moonraker_get,
+    moonraker_post,
+    fetch_printers_for_host,
+    fetch_printer_display_name,
+    probe_moonraker_host,
+    upsert_printers_for_host,
+    synchronize_printers_with_db,
+    build_default_state,
+    fetch_printer_state,
+    upload_gcode_to_printer,
+    start_print_on_printer,
+    pause_print_on_printer,
+    resume_print_on_printer,
+    cancel_print_on_printer,
+    get_printer_print_status,
+)
 
-def get_printer_info():
-    """Получает информацию о принтере через Moonraker API"""
-    try:
-        response = requests.get(f"{BASE_URL}/printer/info", timeout=5)
-        if response.status_code == 200:
-            return response.json()["result"]
-    except Exception as e:
-        print(f"Ошибка при получении информации о принтере: {e}")
-    return None
+from backend.services.background import (  # noqa: F401,E402
+    _executor,
+    update_printer_states_loop,
+    monitor_printing_tasks,
+    handle_print_complete,
+    handle_print_error,
+    handle_print_cancelled,
+)
 
-def get_server_info():
-    """Получает информацию о сервере через Moonraker API"""
-    try:
-        response = requests.get(f"{BASE_URL}/server/info", timeout=5)
-        if response.status_code == 200:
-            return response.json()["result"]
-    except Exception as e:
-        print(f"Ошибка при получении информации о сервере: {e}")
-    return None
+# Helpers re-export
+from backend.api.helpers import (  # noqa: F401,E402
+    allowed_gcode_file,
+    get_printer_or_default,
+    serialize_task,
+    remove_task_gcode,
+)
 
-def update_printer_state():
-    """Фоновая задача для обновления состояния принтера"""
-    while True:
-        try:
-            # Получаем информацию о состоянии принтера
-            response = requests.get(f"{BASE_URL}/printer/objects/query?print_stats&extruder&heater_bed&toolhead", timeout=5)
-            if response.status_code == 200:
-                data = response.json()["result"]["status"]
-                
-                printer_state["status"] = data["print_stats"]["state"]
-                printer_state["temperature"]["extruder"] = data["extruder"]["temperature"]
-                printer_state["temperature"]["bed"] = data["heater_bed"]["temperature"]
-                printer_state["target_temperature"]["extruder"] = data["extruder"]["target"]
-                printer_state["target_temperature"]["bed"] = data["heater_bed"]["target"]
-                printer_state["position"] = {
-                    "x": data["toolhead"]["position"][0],
-                    "y": data["toolhead"]["position"][1],
-                    "z": data["toolhead"]["position"][2]
-                }
-                printer_state["last_update"] = datetime.now().strftime("%H:%M:%S")
-        except Exception as e:
-            print(f"Ошибка при обновлении состояния: {e}")
-        
-        time.sleep(1)
-
-@app.route('/')
-def index():
-    return render_template('dashboard.html')
-
-@app.route('/printer-control')
-def printer_control():
-    return render_template('printer-control.html')
-
-@app.route('/api/printers')
-def get_printers():
-    """API endpoint to get list of printers (for now just one)"""
-    try:
-        printer_info = get_printer_info()
-        server_info = get_server_info()
-        
-        if printer_info and server_info:
-            printer = {
-                "id": 1,
-                "name": printer_info.get("hostname", "Принтер"),
-                "model": printer_info.get("model", "Неизвестная модель"),
-                "status": "work" if server_info.get("klippy_state") == "ready" else "error",
-                "percent": 0,  # Will be updated with real data
-                "lastServed": datetime.now().strftime("%d.%m.%Y"),
-                "material": "PLA"  # Default material
-            }
-            
-            # Try to get print progress if printing
-            try:
-                response = requests.get(f"{BASE_URL}/printer/objects/query?virtual_sdcard&print_stats", timeout=5)
-                if response.status_code == 200:
-                    data = response.json()["result"]["status"]
-                    if "virtual_sdcard" in data and data["virtual_sdcard"]["progress"] > 0:
-                        printer["percent"] = int(data["virtual_sdcard"]["progress"] * 100)
-                        printer["status"] = "work"
-            except:
-                pass
-                
-            return jsonify([printer])
-    except Exception as e:
-        print(f"Ошибка при получении списка принтеров: {e}")
-    
-    # Return default printer if API fails
-    return jsonify([{
-        "id": 1,
-        "name": "Принтер 1",
-        "model": "ENDER-3 PRO",
-        "status": "work",
-        "percent": 67,
-        "lastServed": datetime.now().strftime("%d.%m.%Y"),
-        "material": "PLA"
-    }])
-
-@app.route('/api/state')
-def get_state():
-    return jsonify(printer_state)
-
-@app.route('/api/command', methods=['POST'])
-def send_command():
-    command = request.json.get('command')
-    try:
-        response = requests.post(f"{BASE_URL}/printer/gcode/script", json={"script": command})
-        return jsonify({"success": True, "message": "Команда отправлена"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/home', methods=['POST'])
-def home_axis():
-    axis = request.json.get('axis', 'all')
-    try:
-        command = f"G28 {axis.upper()}" if axis != 'all' else "G28"
-        response = requests.post(f"{BASE_URL}/printer/gcode/script", json={"script": command})
-        return jsonify({"success": True, "message": "Команда отправлена"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-@app.route('/api/temperature', methods=['POST'])
-def set_temperature():
-    data = request.json
-    target = data.get('target')
-    temperature = data.get('temperature')
-    
-    try:
-        command = ""
-        if target == 'extruder':
-            command = f"M104 S{temperature}"
-        elif target == 'bed':
-            command = f"M140 S{temperature}"
-        else:
-            return jsonify({"success": False, "message": "Неверный параметр target"})
-            
-        response = requests.post(f"{BASE_URL}/printer/gcode/script", json={"script": command})
-        return jsonify({"success": True, "message": "Температура установлена"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
+# ---------------------------------------------------------------------------
+# Запуск фоновых потоков при первом импорте модуля
+# ---------------------------------------------------------------------------
+if not app.config.get("BACKGROUND_THREADS_STARTED"):
+    start_background_threads(app)
 
 if __name__ == '__main__':
-    # Запускаем фоновую задачу обновления состояния
-    update_thread = threading.Thread(target=update_printer_state, daemon=True)
-    update_thread.start()
-    
     app.run(host='0.0.0.0', port=5000, debug=True)

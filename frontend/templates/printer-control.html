@@ -7,27 +7,19 @@
 </head>
 <body>
   <aside class="sidebar">
-    <button class="sidebar-btn">Панель управления</button>
-    <button class="sidebar-btn active">Управление принтером</button>
-    <button class="sidebar-btn">Учет времени</button>
-    <div class="sidebar-bottom">
-      <div class="sidebar-link"><span>⚙️</span> Настройки</div>
-      <div class="sidebar-link"><span>ℹ️</span> Информация</div>
-    </div>
+    <button class="sidebar-btn" data-route="/">Панель управления</button>
+    <button class="sidebar-btn active" data-route="/printer-control">Управление принтером</button>
+    <button class="sidebar-btn" data-route="/planning">Планирование</button>
+    <button class="sidebar-btn" data-route="/maintenance">Обслуживание</button>
+    <button class="sidebar-btn" data-route="/spools">Катушки</button>
   </aside>
   <main class="dashboard">
     <div class="printer-header">
       <div class="printer-selector">
-        <h1 class="printer-title" id="printerTitle">🖨️ Принтер 1 - ENDER-3 PRO</h1>
-        <div class="printer-dropdown" id="printerDropdown">
-          <div class="dropdown-item" data-printer="1" data-state="working">🖨️ Принтер 1 - ENDER-3 PRO</div>
-          <div class="dropdown-item" data-printer="2" data-state="ready">🖨️ Принтер 2 - CR-10 MINI</div>
-          <div class="dropdown-item" data-printer="3" data-state="finished">🖨️ Принтер 3 - Ender-5 Plus</div>
-          <div class="dropdown-item" data-printer="4" data-state="maintenance">🖨️ Принтер 4 - Prusa MK3S</div>
-          <div class="dropdown-item" data-printer="5" data-state="filament">🖨️ Принтер 5 - Ender-3 V2</div>
-        </div>
+        <h1 class="printer-title" id="printerTitle">🖨️ Выберите принтер</h1>
+        <div class="printer-dropdown" id="printerDropdown"></div>
       </div>
-      <div class="printer-status status-work">В работе • 67%</div>
+      <div class="printer-status status-work" id="printerStatus">Нет данных</div>
     </div>
     
     <!-- Maintenance Warning Modal -->
@@ -111,6 +103,23 @@
         </div>
       </section>
     </div>
+    <!-- Секция текущей печати -->
+    <section class="print-job-section" id="printJobSection">
+      <h2>Текущая печать</h2>
+      <div id="printJobContent">
+        <!-- Заполняется динамически -->
+        <div class="no-print-job">
+          <p>Нет активной печати</p>
+          <div class="start-job-container">
+            <select id="taskSelector" class="task-select">
+              <option value="">Выберите задачу...</option>
+            </select>
+            <button id="startTaskBtn" class="start-job-btn" disabled>Запустить</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <div class="row-blocks">
       <section class="axis-section">
         <h2>Оси/Экструдер</h2>
@@ -147,9 +156,7 @@
         <h2>Консоль</h2>
         <div class="console-container">
           <div class="console-output" id="consoleOutput">
-            <div class="console-line">&gt; Принтер готов к работе</div>
-            <div class="console-line">&gt; Температура экструдера: 210°C</div>
-            <div class="console-line">&gt; Температура стола: 60°C</div>
+            <!-- Консоль заполняется динамически -->
           </div>
           <div class="console-input-container">
             <input type="text" id="gcodeInput" placeholder="G-code..." onkeypress="handleGcodeEnter(event)">
@@ -159,6 +166,10 @@
       </section>
     </div>
   </main>
+  <div class="page-loader" id="pageLoader" aria-hidden="true">
+    <div class="loader-spinner"></div>
+    <span>Загрузка...</span>
+  </div>
   <script src="../static/js/printer-control.js"></script>
 </body>
 </html>

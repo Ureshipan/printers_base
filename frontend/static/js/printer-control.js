@@ -1,118 +1,76 @@
 let currentDistance = 0.1;
 let updateInterval;
-let extruderTempValue = 210; // Храним значение температуры экструдера
-let bedTempValue = 60; // Храним значение температуры стола
+let extruderTempValue = 0; // Храним значение температуры экструдера (0 = не задана)
+let bedTempValue = 0; // Храним значение температуры стола (0 = не задана)
+let selectedPrinterId = null;
+let printersCache = [];
 
 // Инициализация
-document.addEventListener('DOMContentLoaded', function() {
-  // Printer dropdown functionality
+document.addEventListener('DOMContentLoaded', async function() {
   const printerTitle = document.getElementById('printerTitle');
   const printerDropdown = document.getElementById('printerDropdown');
-  const body = document.body;
-  
-  // Modal elements
+  const printerStatus = document.getElementById('printerStatus');
   const maintenanceModal = document.getElementById('maintenanceModal');
   const closeModal = document.getElementById('closeModal');
   const confirmMaintenance = document.getElementById('confirmMaintenance');
-  
-  // Filament modal elements
   const filamentModal = document.getElementById('filamentModal');
   const closeFilamentModal = document.getElementById('closeFilamentModal');
   const confirmFilament = document.getElementById('confirmFilament');
-  
-  // Добавляем обработчики для кнопок навигации
+  const body = document.body;
+
+  // Навигация
   const sidebarButtons = document.querySelectorAll('.sidebar-btn');
-  sidebarButtons[0].addEventListener('click', function() {
-    // Переход на панель управления
-    window.location.href = '/';
+  const currentPath = window.location.pathname;
+  sidebarButtons.forEach(button => {
+    const route = button.dataset.route;
+    if (!route) {
+      return;
+    }
+    if (route === currentPath) {
+      button.classList.add('active');
+    } else {
+      button.classList.remove('active');
+    }
+    button.addEventListener('click', function() {
+      if (window.location.pathname !== route) {
+        window.location.href = route;
+      }
+    });
   });
-  
+
   printerTitle.addEventListener('click', function() {
+    if (!printersCache.length) return;
     printerDropdown.classList.toggle('show');
   });
-  
-  // Close dropdown when clicking outside
+
   document.addEventListener('click', function(event) {
     if (!printerTitle.contains(event.target) && !printerDropdown.contains(event.target)) {
       printerDropdown.classList.remove('show');
     }
   });
-  
-  // Maintenance Modal event handlers
+
+  // Модалки предупреждений
   closeModal.addEventListener('click', function() {
     maintenanceModal.style.display = 'none';
   });
-  
   confirmMaintenance.addEventListener('click', function() {
     maintenanceModal.style.display = 'none';
   });
-  
-  // Filament Modal event handlers
   closeFilamentModal.addEventListener('click', function() {
     filamentModal.style.display = 'none';
   });
-  
   confirmFilament.addEventListener('click', function() {
     filamentModal.style.display = 'none';
   });
-  
   window.addEventListener('click', function(event) {
-    if (event.target == maintenanceModal) {
+    if (event.target === maintenanceModal) {
       maintenanceModal.style.display = 'none';
     }
-    if (event.target == filamentModal) {
+    if (event.target === filamentModal) {
       filamentModal.style.display = 'none';
     }
   });
-  
-  // Handle printer selection
-  document.querySelectorAll('.dropdown-item').forEach(item => {
-    item.addEventListener('click', function() {
-      const printerText = this.textContent;
-      const printerState = this.dataset.state;
-      
-      // Update printer title
-      printerTitle.textContent = printerText;
-      printerDropdown.classList.remove('show');
-      
-      // Update theme based on printer state (only button colors)
-      body.className = '';
-      body.classList.add(`theme-${printerState}`);
-      
-      // Update printer status based on selection
-      const printerStatus = document.querySelector('.printer-status');
-      switch(printerState) {
-        case 'ready':
-          printerStatus.textContent = 'Готов к работе';
-          printerStatus.className = 'printer-status';
-          break;
-        case 'working':
-          printerStatus.textContent = 'В работе • 67%';
-          printerStatus.className = 'printer-status status-work';
-          break;
-        case 'finished':
-          printerStatus.textContent = 'Печать завершена';
-          printerStatus.className = 'printer-status';
-          break;
-        case 'maintenance':
-          printerStatus.textContent = 'Требуется обслуживание';
-          printerStatus.className = 'printer-status status-work';
-          // Show maintenance warning modal
-          maintenanceModal.style.display = 'block';
-          break;
-        case 'filament':
-          printerStatus.textContent = 'Закончился филамент';
-          printerStatus.className = 'printer-status status-work';
-          // Show filament warning modal
-          filamentModal.style.display = 'block';
-          break;
-        default:
-          printerStatus.textContent = 'Готов к работе';
-          printerStatus.className = 'printer-status';
-      }
-    });
-  });
-  
+
   document.querySelectorAll('.distance-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       document.querySelectorAll('.distance-btn').forEach(b => b.classList.remove('active'));
@@ -120,25 +78,129 @@ document.addEventListener('DOMContentLoaded', function() {
       currentDistance = parseFloat(this.dataset.distance);
     });
   });
-  
-  // Инициализируем значения температур
+
   document.getElementById('extruderTemp').value = extruderTempValue;
   document.getElementById('bedTemp').value = bedTempValue;
-  
-  // Добавляем обработчики событий для полей ввода температуры
   document.getElementById('extruderTemp').addEventListener('change', function() {
     extruderTempValue = parseInt(this.value) || 0;
   });
-  
   document.getElementById('bedTemp').addEventListener('change', function() {
     bedTempValue = parseInt(this.value) || 0;
   });
-  
-  // Начинаем обновление данных в реальном времени
+
+  await loadPrinters(printerDropdown, printerTitle, printerStatus, body);
   startRealTimeUpdates();
 });
 
 function getCurrentDistance() { return currentDistance; }
+
+async function loadPrinters(dropdown, titleEl, statusEl, body) {
+  try {
+    const response = await fetch('/api/printers');
+    if (!response.ok) throw new Error('Не удалось загрузить принтеры');
+    printersCache = await response.json();
+  } catch (error) {
+    console.error(error);
+    printersCache = [];
+  }
+
+  dropdown.innerHTML = '';
+  if (!printersCache.length) {
+    dropdown.innerHTML = '<div class="dropdown-item disabled">Нет принтеров</div>';
+    titleEl.textContent = '🖨️ Принтеры не найдены';
+    statusEl.textContent = 'Нет данных';
+    statusEl.className = 'printer-status';
+    selectedPrinterId = null;
+    return;
+  }
+
+  printersCache.forEach(printer => {
+    const item = document.createElement('div');
+    item.className = 'dropdown-item';
+    item.dataset.printer = printer.id;
+    item.textContent = `🖨️ ${printer.name}`;
+    item.addEventListener('click', () => selectPrinter(printer.id, titleEl, statusEl, body, dropdown));
+    dropdown.appendChild(item);
+  });
+
+  // Проверяем URL параметр printer_id
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedPrinterId = urlParams.get('printer_id');
+
+  if (requestedPrinterId) {
+    const printerId = parseInt(requestedPrinterId, 10);
+    const printerExists = printersCache.some(p => p.id === printerId);
+    if (printerExists) {
+      selectPrinter(printerId, titleEl, statusEl, body, dropdown);
+      return;
+    }
+  }
+
+  // Если нет параметра или принтер не найден - выбираем первый
+  selectPrinter(printersCache[0].id, titleEl, statusEl, body, dropdown);
+}
+
+async function selectPrinter(printerId, titleEl, statusEl, body, dropdown) {
+  selectedPrinterId = printerId;
+  const printer = printersCache.find(p => p.id === printerId);
+  if (!printer) {
+    statusEl.textContent = 'Нет данных';
+    statusEl.className = 'printer-status';
+    return;
+  }
+  titleEl.textContent = `🖨️ ${printer.name}`;
+  dropdown.classList.remove('show');
+  updatePrinterStatusText(statusEl, printer.status, printer.percent);
+  body.className = '';
+  body.classList.add(`theme-${printer.status || 'idle'}`);
+
+  // Проверка необходимости обслуживания
+  if (printer.needs_maintenance) {
+    const maintenanceModal = document.getElementById('maintenanceModal');
+    if (maintenanceModal) {
+      maintenanceModal.style.display = 'flex';
+    }
+    statusEl.textContent = 'Требуется обслуживание';
+    statusEl.className = 'printer-status status-maintenance';
+  }
+
+  // Очищаем консоль при смене принтера и показываем начальное сообщение
+  clearConsole();
+  addConsoleMessage(`> Выбран принтер: ${printer.name}`);
+
+  // Сбрасываем флаг первого обновления для нового принтера
+  isFirstUpdate = true;
+  lastKnownStatus = null;
+
+  // Загружаем состояние и задачи параллельно, ждём завершения
+  await Promise.all([
+    updatePrinterState(),
+    loadTasksForPrinter(printerId),
+  ]);
+}
+
+function updatePrinterStatusText(statusEl, status, percent = 0) {
+  const mapped = status === 'printing' ? 'work' :
+    status === 'ready' || status === 'idle' || status === 'standby' ? 'idle' :
+    status === 'paused' ? 'idle' :
+    status === 'complete' ? 'idle' :
+    status;
+
+  let text = 'Готов к работе';
+  let cls = 'printer-status';
+  if (mapped === 'work') {
+    text = `В работе${percent ? ` • ${percent}%` : ''}`;
+    cls = 'printer-status status-work';
+  } else if (mapped === 'error' || mapped === 'offline') {
+    text = 'Ошибка/офлайн';
+    cls = 'printer-status status-work';
+  } else if (mapped === 'service') {
+    text = 'Тех. осмотр';
+    cls = 'printer-status status-work';
+  }
+  statusEl.textContent = text;
+  statusEl.className = cls;
+}
 
 // Функция для начала обновления данных в реальном времени
 function startRealTimeUpdates() {
@@ -149,37 +211,86 @@ function startRealTimeUpdates() {
   updateInterval = setInterval(updatePrinterState, 1000);
 }
 
+// Переменная для отслеживания первого обновления после выбора принтера
+let isFirstUpdate = true;
+let lastKnownStatus = null;
+
 // Функция для обновления состояния принтера
 async function updatePrinterState() {
+  const statusEl = document.getElementById('printerStatus');
+  if (!selectedPrinterId) {
+    updateTemperatureDisplay('extruder', 0, 0);
+    updateTemperatureDisplay('bed', 0, 0);
+    statusEl.textContent = 'Нет принтера';
+    statusEl.className = 'printer-status';
+    return;
+  }
+
   try {
-    const response = await fetch('/api/state');
-    if (response.ok) {
-      const state = await response.json();
-      
-      // Обновляем отображение температур в новом формате
-      updateTemperatureDisplay('extruder', state.temperature.extruder, state.target_temperature.extruder);
-      updateTemperatureDisplay('bed', state.temperature.bed, state.target_temperature.bed);
-      
-      // Обновляем позиции
-      document.getElementById('posX').textContent = state.position.x.toFixed(1);
-      document.getElementById('posY').textContent = state.position.y.toFixed(1);
-      document.getElementById('posZ').textContent = state.position.z.toFixed(1);
-      
-      // Обновляем статус принтера
-      const printerStatus = document.querySelector('.printer-status');
-      if (state.status === 'printing') {
-        printerStatus.textContent = 'В работе';
-        printerStatus.className = 'printer-status status-work';
-      } else if (state.status === 'ready') {
-        printerStatus.textContent = 'Готов к работе';
-        printerStatus.className = 'printer-status';
-      } else {
-        printerStatus.textContent = state.status;
-        printerStatus.className = 'printer-status';
-      }
+    const response = await fetch(`/api/state?printer_id=${selectedPrinterId}`);
+    if (!response.ok) {
+      throw new Error('state request failed');
+    }
+    const state = await response.json();
+
+    updateTemperatureDisplay('extruder', state.temperature.extruder, state.target_temperature.extruder);
+    updateTemperatureDisplay('bed', state.temperature.bed, state.target_temperature.bed);
+
+    document.getElementById('posX').textContent = state.position.x.toFixed(1);
+    document.getElementById('posY').textContent = state.position.y.toFixed(1);
+    document.getElementById('posZ').textContent = state.position.z.toFixed(1);
+
+    updatePrinterStatusText(statusEl, state.status, state.progress);
+
+    // Проверяем необходимость обслуживания из кеша принтеров
+    const printer = printersCache.find(p => p.id === selectedPrinterId);
+    if (printer && printer.needs_maintenance) {
+      statusEl.textContent = 'Требуется обслуживание';
+      statusEl.className = 'printer-status status-maintenance';
+    }
+
+    // Показываем информацию о состоянии при первом обновлении или при изменении статуса
+    if (isFirstUpdate || lastKnownStatus !== state.status) {
+      showStatusInConsole(state);
+      lastKnownStatus = state.status;
+      isFirstUpdate = false;
     }
   } catch (error) {
     console.error('Ошибка при обновлении состояния принтера:', error);
+    updatePrinterStatusText(statusEl, 'error', 0);
+    if (isFirstUpdate) {
+      addConsoleMessage('> Не удалось получить данные принтера', 'error');
+      isFirstUpdate = false;
+    }
+  }
+}
+
+// Показать состояние принтера в консоли
+function showStatusInConsole(state) {
+  const statusTexts = {
+    'offline': 'Принтер офлайн',
+    'error': 'Ошибка принтера',
+    'printing': 'Идёт печать',
+    'work': 'Идёт печать',
+    'idle': 'Принтер готов к работе',
+    'standby': 'Принтер в режиме ожидания',
+    'paused': 'Печать приостановлена',
+    'complete': 'Печать завершена'
+  };
+
+  const statusText = statusTexts[state.status] || `Статус: ${state.status}`;
+
+  if (state.status === 'offline' || state.status === 'error') {
+    addConsoleMessage(`> ${statusText}`, 'warning');
+  } else {
+    addConsoleMessage(`> ${statusText}`);
+    // Показываем температуры только если принтер онлайн
+    if (state.temperature.extruder > 0 || state.target_temperature.extruder > 0) {
+      addConsoleMessage(`> Экструдер: ${Math.round(state.temperature.extruder)}°C / ${Math.round(state.target_temperature.extruder)}°C`);
+    }
+    if (state.temperature.bed > 0 || state.target_temperature.bed > 0) {
+      addConsoleMessage(`> Стол: ${Math.round(state.temperature.bed)}°C / ${Math.round(state.target_temperature.bed)}°C`);
+    }
   }
 }
 
@@ -241,12 +352,16 @@ function extrudeFilament(amount) {
 // Функция для отправки команд на сервер
 async function sendCommand(endpoint, data) {
   try {
+    if (!selectedPrinterId) {
+      addConsoleMessage('> Нет выбранного принтера');
+      return;
+    }
     const response = await fetch(`/api/${endpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify({ ...data, printer_id: selectedPrinterId })
     });
     
     const result = await response.json();
@@ -269,6 +384,7 @@ function sendCustomGcode() {
   const input = document.getElementById('gcodeInput');
   const gcode = input.value.trim();
   if (gcode) {
+    addConsoleMessage(`> ${gcode}`);
     sendCommand('command', { command: gcode });
     input.value = '';
   }
@@ -283,11 +399,17 @@ function addConsoleMessage(message, type = 'normal') {
   const line = document.createElement('div');
   line.className = 'console-line';
   if (type === 'error') { line.style.color = '#ff6666'; }
+  else if (type === 'warning') { line.style.color = '#ffaa66'; }
   else if (message.startsWith('<')) { line.style.color = '#66ff66'; }
   else if (message.startsWith('>')) { line.style.color = '#6666ff'; }
   line.textContent = message;
   output.appendChild(line);
   output.scrollTop = output.scrollHeight;
+}
+
+function clearConsole() {
+  const output = document.getElementById('consoleOutput');
+  output.innerHTML = '';
 }
 
 // Обновление позиций теперь происходит через API, поэтому убираем симуляцию
@@ -307,6 +429,201 @@ function addConsoleMessage(message, type = 'normal') {
 //   const newHours = Math.floor(totalSeconds / 3600);
 //   const newMinutes = Math.floor((totalSeconds % 3600) / 60);
 //   const newSecs = totalSeconds % 60;
-//   timeElement.textContent = 
+//   timeElement.textContent =
 //     `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}:${String(newSecs).padStart(2, '0')}`;
 // }, 1000);
+
+// ---------------------------------------------------------------------------
+// Print Job Control Functions
+// ---------------------------------------------------------------------------
+let tasksCache = [];
+let currentPrintingTask = null;
+
+async function loadTasksForPrinter(printerId) {
+  try {
+    const response = await fetch('/api/tasks');
+    if (!response.ok) throw new Error('Не удалось загрузить задачи');
+    const allTasks = await response.json();
+    // Фильтруем задачи для текущего принтера
+    tasksCache = allTasks.filter(t =>
+      t.printer?.id === printerId &&
+      (t.status === 'pending' || t.status === 'queued' || t.status === 'printing' || t.status === 'paused') &&
+      t.gcode?.has_file
+    );
+    updatePrintJobSection();
+  } catch (error) {
+    console.error('Ошибка загрузки задач:', error);
+    tasksCache = [];
+  }
+}
+
+function updatePrintJobSection() {
+  const printJobContent = document.getElementById('printJobContent');
+  if (!printJobContent) return;
+
+  // Ищем печатающуюся или приостановленную задачу
+  currentPrintingTask = tasksCache.find(t => t.status === 'printing' || t.status === 'paused');
+
+  if (currentPrintingTask) {
+    renderActivePrintJob(printJobContent, currentPrintingTask);
+  } else {
+    renderNoPrintJob(printJobContent);
+  }
+}
+
+function renderActivePrintJob(container, task) {
+  const progress = task.progress || 0;
+  const statusLabel = task.status === 'printing' ? 'Печатается' : 'Пауза';
+  const estimatedTime = task.estimated_time_minutes || 0;
+  const remainingTime = estimatedTime > 0 ? Math.round(estimatedTime * (100 - progress) / 100) : 0;
+
+  container.innerHTML = `
+    <div class="active-print-job">
+      <div class="print-job-header">
+        <div>
+          <div class="print-job-name">${task.name || 'Без названия'}</div>
+          <div class="print-job-project">${task.project?.name || 'Без проекта'}</div>
+        </div>
+        <span class="print-job-status ${task.status}">${statusLabel}</span>
+      </div>
+      <div class="print-progress-container">
+        <div class="print-progress-bar">
+          <div class="print-progress-fill" style="width: ${progress}%"></div>
+        </div>
+        <div class="print-progress-info">
+          <span>${progress}%</span>
+          <span>${remainingTime > 0 ? `~${remainingTime} мин осталось` : ''}</span>
+        </div>
+      </div>
+      <div class="print-job-actions">
+        ${task.status === 'printing'
+          ? `<button class="print-job-btn pause" onclick="pausePrintJob(${task.id})">⏸ Пауза</button>`
+          : `<button class="print-job-btn resume" onclick="resumePrintJob(${task.id})">▶ Возобновить</button>`
+        }
+        <button class="print-job-btn cancel" onclick="cancelPrintJob(${task.id})">✕ Отменить</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderNoPrintJob(container) {
+  // Получаем задачи готовые к печати (pending/queued с G-code)
+  const readyTasks = tasksCache.filter(t => (t.status === 'pending' || t.status === 'queued') && t.gcode?.has_file);
+
+  let optionsHtml = '<option value="">Выберите задачу...</option>';
+  readyTasks.forEach(task => {
+    optionsHtml += `<option value="${task.id}">${task.name || 'Без названия'} (${task.project?.name || 'Без проекта'})</option>`;
+  });
+
+  container.innerHTML = `
+    <div class="no-print-job">
+      <p>Нет активной печати</p>
+      <div class="start-job-container">
+        <select id="taskSelector" class="task-select" onchange="onTaskSelectorChange()">
+          ${optionsHtml}
+        </select>
+        <button id="startTaskBtn" class="start-job-btn" disabled onclick="startSelectedTask()">Запустить</button>
+      </div>
+    </div>
+  `;
+}
+
+function onTaskSelectorChange() {
+  const selector = document.getElementById('taskSelector');
+  const startBtn = document.getElementById('startTaskBtn');
+  if (selector && startBtn) {
+    startBtn.disabled = !selector.value;
+  }
+}
+
+async function startSelectedTask() {
+  const selector = document.getElementById('taskSelector');
+  if (!selector || !selector.value) return;
+
+  const taskId = parseInt(selector.value, 10);
+  const task = tasksCache.find(t => t.id === taskId);
+
+  if (!confirm(`Запустить печать задачи "${task?.name || 'Без названия'}"?`)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/print/start`, { method: 'POST' });
+    const result = await response.json();
+
+    if (result.success) {
+      addConsoleMessage('< Печать запущена');
+      await loadTasksForPrinter(selectedPrinterId);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+      alert(result.message || 'Ошибка запуска печати');
+    }
+  } catch (error) {
+    console.error('Ошибка запуска печати:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+  }
+}
+
+async function pausePrintJob(taskId) {
+  if (!confirm('Приостановить печать?')) return;
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/print/pause`, { method: 'POST' });
+    const result = await response.json();
+
+    if (result.success) {
+      addConsoleMessage('< Печать приостановлена');
+      await loadTasksForPrinter(selectedPrinterId);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('Ошибка паузы:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+  }
+}
+
+async function resumePrintJob(taskId) {
+  if (!confirm('Возобновить печать?')) return;
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/print/resume`, { method: 'POST' });
+    const result = await response.json();
+
+    if (result.success) {
+      addConsoleMessage('< Печать возобновлена');
+      await loadTasksForPrinter(selectedPrinterId);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('Ошибка возобновления:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+  }
+}
+
+async function cancelPrintJob(taskId) {
+  if (!confirm('Отменить печать? Материал будет списан частично.')) return;
+
+  try {
+    const response = await fetch(`/api/tasks/${taskId}/print/cancel`, { method: 'POST' });
+    const result = await response.json();
+
+    if (result.success) {
+      addConsoleMessage('< Печать отменена');
+      await loadTasksForPrinter(selectedPrinterId);
+    } else {
+      addConsoleMessage(`< Ошибка: ${result.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('Ошибка отмены:', error);
+    addConsoleMessage(`< Ошибка: ${error.message}`, 'error');
+  }
+}
+
+// Периодическое обновление задач для отслеживания прогресса
+setInterval(async () => {
+  if (selectedPrinterId && currentPrintingTask) {
+    await loadTasksForPrinter(selectedPrinterId);
+  }
+}, 5000);

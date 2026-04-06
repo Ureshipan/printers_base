@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Управление катушками</title>
+  <link rel="stylesheet" href="../static/css/style.css">
+  <link rel="stylesheet" href="../static/css/spools.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <button class="sidebar-btn" data-route="/">Панель управления</button>
+    <button class="sidebar-btn" data-route="/printer-control">Управление принтером</button>
+    <button class="sidebar-btn" data-route="/planning">Планирование</button>
+    <button class="sidebar-btn" data-route="/maintenance">Обслуживание</button>
+    <button class="sidebar-btn active" data-route="/spools">Катушки</button>
+  </aside>
+
+  <main class="spools-main">
+    <header class="spools-header">
+      <div>
+        <h1>Управление катушками</h1>
+        <p class="spools-subtitle">Учёт филамента, отслеживание расхода и остатков</p>
+      </div>
+      <div class="header-actions">
+        <button id="openCoilModal" class="primary-btn tab-action" data-tab="coils">Добавить катушку</button>
+        <button id="openFilamentModal" class="primary-btn tab-action hidden" data-tab="filaments">Добавить филамент</button>
+        <button id="openVendorModal" class="primary-btn tab-action hidden" data-tab="vendors">Добавить производителя</button>
+      </div>
+    </header>
+
+    <!-- Табы навигации -->
+    <nav class="spools-tabs">
+      <button class="tab-btn active" data-tab="coils">Катушки</button>
+      <button class="tab-btn" data-tab="filaments">Филаменты</button>
+      <button class="tab-btn" data-tab="vendors">Производители</button>
+    </nav>
+
+    <section class="spools-content">
+      <div id="spoolsMessage" class="spools-message" hidden></div>
+
+      <!-- ========== TAB: Катушки ========== -->
+      <div class="tab-content active" data-tab="coils">
+        <!-- Статистика -->
+        <section class="stats-section">
+          <div class="stat-card">
+            <span class="stat-value" id="statTotalCoils">0</span>
+            <span class="stat-label">Катушек</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="statTotalWeight">0 г</span>
+            <span class="stat-label">Филамента</span>
+          </div>
+          <div class="stat-card stat-warning">
+            <span class="stat-value" id="statLowStock">0</span>
+            <span class="stat-label">Заканчивается</span>
+          </div>
+          <div class="stat-card stat-danger">
+            <span class="stat-value" id="statArchived">0</span>
+            <span class="stat-label">В архиве</span>
+          </div>
+        </section>
+
+        <!-- Фильтры и таблица катушек -->
+        <section class="coils-table-card">
+          <div class="card-header">
+            <h2>Список катушек</h2>
+            <div class="table-controls">
+              <select id="filterFilament" class="filter-select">
+                <option value="">Все филаменты</option>
+              </select>
+              <select id="filterVendor" class="filter-select">
+                <option value="">Все производители</option>
+              </select>
+              <select id="filterStatus" class="filter-select">
+                <option value="">Активные</option>
+                <option value="all">Все</option>
+                <option value="archived">Только архив</option>
+                <option value="low">Заканчивается (&lt;20%)</option>
+              </select>
+              <input type="text" id="searchInput" class="search-input" placeholder="Поиск...">
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="coils-table">
+              <thead>
+                <tr>
+                  <th>Цвет</th>
+                  <th>Название</th>
+                  <th>Филамент</th>
+                  <th>Производитель</th>
+                  <th>Остаток</th>
+                  <th>Местоположение</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="coilsTableBody">
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- ========== TAB: Филаменты ========== -->
+      <div class="tab-content" data-tab="filaments">
+        <section class="stats-section">
+          <div class="stat-card">
+            <span class="stat-value" id="statTotalFilaments">0</span>
+            <span class="stat-label">Филаментов</span>
+          </div>
+        </section>
+
+        <section class="coils-table-card">
+          <div class="card-header">
+            <h2>Список филаментов</h2>
+            <div class="table-controls">
+              <select id="filterFilamentVendor" class="filter-select">
+                <option value="">Все производители</option>
+              </select>
+              <input type="text" id="searchFilamentInput" class="search-input" placeholder="Поиск...">
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="coils-table">
+              <thead>
+                <tr>
+                  <th>Цвет</th>
+                  <th>Название</th>
+                  <th>Тип пластика</th>
+                  <th>Производитель</th>
+                  <th>Диаметр</th>
+                  <th>Вес</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="filamentsTableBody">
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- ========== TAB: Производители ========== -->
+      <div class="tab-content" data-tab="vendors">
+        <section class="stats-section">
+          <div class="stat-card">
+            <span class="stat-value" id="statTotalVendors">0</span>
+            <span class="stat-label">Производителей</span>
+          </div>
+        </section>
+
+        <section class="coils-table-card">
+          <div class="card-header">
+            <h2>Список производителей</h2>
+            <div class="table-controls">
+              <input type="text" id="searchVendorInput" class="search-input" placeholder="Поиск...">
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="coils-table">
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Вес пустой катушки (по умолчанию)</th>
+                  <th>Комментарий</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="vendorsTableBody">
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Модальное окно создания/редактирования катушки -->
+  <div class="modal-backdrop hidden" id="coilModal">
+    <div class="modal-window coil-window">
+      <div class="modal-header">
+        <h2 id="coilModalTitle">Новая катушка</h2>
+        <button id="closeCoilModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="coilForm" class="modal-form">
+        <input type="hidden" name="coil_id" id="coilId">
+        <div class="form-grid">
+          <label>
+            Название *
+            <input type="text" name="name" required placeholder="PLA Белый #1">
+          </label>
+          <label>
+            Филамент *
+            <select name="filament_id" required>
+              <option value="">Выберите...</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Секция весов с пояснениями -->
+        <div class="weight-section">
+          <h3 class="weight-section-title">Вес катушки</h3>
+          <p class="weight-hint">Заполните любой из вариантов — остальное рассчитается автоматически</p>
+
+          <div class="weight-options">
+            <div class="weight-option">
+              <label>
+                <span class="weight-label">Общий вес (взвесить катушку)</span>
+                <span class="weight-desc">Положите катушку на весы и введите показания</span>
+                <input type="number" name="total_weight" id="totalWeight" min="0" step="1" placeholder="1200">
+                <span class="weight-unit">грамм</span>
+              </label>
+            </div>
+
+            <div class="weight-divider">или</div>
+
+            <div class="weight-option">
+              <label>
+                <span class="weight-label">Вес пластика (без катушки)</span>
+                <span class="weight-desc">Указан на упаковке, обычно 1000 г или 750 г</span>
+                <input type="number" name="initial_weight" id="initialWeight" min="0" step="1" placeholder="1000">
+                <span class="weight-unit">грамм</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="weight-extra">
+            <label>
+              <span class="weight-label">Вес пустой катушки</span>
+              <span class="weight-desc">Подставится из данных производителя или введите вручную (~150-250 г)</span>
+              <input type="number" name="spool_weight" id="spoolWeight" min="0" step="1" placeholder="200">
+              <span class="weight-unit">грамм</span>
+            </label>
+          </div>
+
+          <div class="weight-result" id="weightResult">
+            <span class="result-label">Итого пластика:</span>
+            <span class="result-value" id="calculatedWeight">—</span>
+          </div>
+
+          <!-- Скрытое поле для текущего остатка (равен начальному для новой катушки) -->
+          <input type="hidden" name="remains" id="remainsField">
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Цена (₽)
+            <input type="number" name="price" min="0" step="0.01" placeholder="1500">
+          </label>
+          <label>
+            Местоположение
+            <input type="text" name="location" placeholder="Полка A2">
+          </label>
+          <label>
+            Номер партии
+            <input type="text" name="lot_nr" placeholder="2024-001">
+          </label>
+        </div>
+        <label class="notes-field">
+          Комментарий
+          <textarea name="comment" rows="2" placeholder="Особенности, заметки..."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="cancelCoil">Отмена</button>
+          <button type="submit" class="primary-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно создания/редактирования филамента -->
+  <div class="modal-backdrop hidden" id="filamentModal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h2 id="filamentModalTitle">Новый филамент</h2>
+        <button id="closeFilamentModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="filamentForm" class="modal-form">
+        <input type="hidden" name="filament_id" id="filamentId">
+        <div class="form-grid">
+          <label>
+            Название *
+            <input type="text" name="name" required placeholder="PLA+ Premium White">
+          </label>
+          <label>
+            Производитель
+            <select name="vendor_id">
+              <option value="">Не указан</option>
+            </select>
+          </label>
+          <label>
+            Тип пластика *
+            <input type="text" name="material" required placeholder="PLA, PETG, ABS..." list="materialTypes">
+            <datalist id="materialTypes">
+              <option value="PLA">
+              <option value="PLA+">
+              <option value="PETG">
+              <option value="ABS">
+              <option value="TPU">
+              <option value="Nylon">
+              <option value="ASA">
+              <option value="PC">
+              <option value="HIPS">
+              <option value="PVA">
+            </datalist>
+          </label>
+          <label>
+            Цвет
+            <div class="color-input-wrapper">
+              <input type="color" name="color_hex" id="filamentColorPicker" value="#FFFFFF">
+              <input type="text" name="color_hex_text" id="filamentColorHexText" placeholder="#FFFFFF" maxlength="7">
+            </div>
+          </label>
+          <label>
+            Диаметр (мм)
+            <select name="diameter">
+              <option value="1.75">1.75 мм</option>
+              <option value="2.85">2.85 мм</option>
+            </select>
+          </label>
+          <label>
+            Стандартный вес катушки (г)
+            <input type="number" name="weight" min="0" step="1" placeholder="1000" value="1000">
+          </label>
+          <label>
+            Вес пустой катушки (г)
+            <input type="number" name="empty_spool_weight" min="0" step="1" placeholder="200" value="200">
+          </label>
+          <label>
+            Плотность (г/см³)
+            <input type="number" name="density" min="0" step="0.01" placeholder="1.24">
+          </label>
+        </div>
+        <label class="notes-field">
+          Описание
+          <textarea name="description" rows="2" placeholder="Характеристики, рекомендации..."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="cancelFilament">Отмена</button>
+          <button type="submit" class="primary-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно создания/редактирования производителя -->
+  <div class="modal-backdrop hidden" id="vendorModal">
+    <div class="modal-window vendor-window">
+      <div class="modal-header">
+        <h2 id="vendorModalTitle">Новый производитель</h2>
+        <button id="closeVendorModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="vendorForm" class="modal-form">
+        <input type="hidden" name="vendor_id" id="vendorId">
+        <div class="form-grid">
+          <label>
+            Название *
+            <input type="text" name="name" required placeholder="eSUN, Bestfilament...">
+          </label>
+          <label>
+            Вес пустой катушки (г) *
+            <input type="number" name="empty_spool_weight" min="1" step="1" placeholder="200" required>
+          </label>
+        </div>
+        <label class="notes-field">
+          Комментарий
+          <textarea name="comment" rows="2" placeholder="Заметки о производителе..."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="cancelVendor">Отмена</button>
+          <button type="submit" class="primary-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно истории катушки -->
+  <div class="modal-backdrop hidden" id="historyModal">
+    <div class="modal-window history-window">
+      <div class="modal-header">
+        <h2 id="historyModalTitle">История расхода</h2>
+        <button id="closeHistoryModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <div class="history-content">
+        <div class="history-summary">
+          <p><strong>Катушка:</strong> <span id="historyCoilName">-</span></p>
+          <p><strong>Использовано:</strong> <span id="historyUsedWeight">0</span> г</p>
+        </div>
+        <div class="table-wrapper">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Задача</th>
+                <th>Использовано (г)</th>
+                <th>Примечание</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно корректировки остатка -->
+  <div class="modal-backdrop hidden" id="adjustModal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h2>Корректировка остатка</h2>
+        <button id="closeAdjustModal" class="close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <form id="adjustForm" class="modal-form">
+        <input type="hidden" name="adjust_coil_id" id="adjustCoilId">
+        <div class="adjust-info">
+          <p><strong>Катушка:</strong> <span id="adjustCoilName">-</span></p>
+          <p><strong>Текущий остаток:</strong> <span id="adjustCurrentRemains">0</span> г</p>
+        </div>
+        <div class="form-grid">
+          <label>
+            Новый остаток (г) *
+            <input type="number" name="new_remains" required min="0" step="0.1">
+          </label>
+        </div>
+        <label class="notes-field">
+          Причина корректировки
+          <textarea name="adjust_notes" rows="2" placeholder="Взвешивание, ошибка учёта..."></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="cancelAdjust">Отмена</button>
+          <button type="submit" class="primary-btn">Применить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="../static/js/spools.js"></script>
+</body>
+</html>
