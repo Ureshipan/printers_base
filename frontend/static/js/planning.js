@@ -163,6 +163,12 @@ function populateSelectOptions() {
   });
 
   printerSelect.innerHTML = '';
+  if (printers.length > 1) {
+    const allOption = document.createElement('option');
+    allOption.value = 'all';
+    allOption.textContent = 'Все принтеры';
+    printerSelect.appendChild(allOption);
+  }
   printers.forEach(printer => {
     const option = document.createElement('option');
     option.value = printer.id;
@@ -555,10 +561,13 @@ async function handleTaskSubmit(event) {
   event.preventDefault();
   const formData = new FormData(taskForm);
 
+  const rawPrinterId = formData.get('printer_id');
+  const isAllPrinters = rawPrinterId === 'all';
+
   const payload = {
     name: formData.get('name')?.trim() || null,
-    project_id: parseInt(formData.get('project_id'), 10),
-    printer_id: parseInt(formData.get('printer_id'), 10),
+    project_id: formData.get('project_id') ? parseInt(formData.get('project_id'), 10) : null,
+    printer_id: isAllPrinters ? null : parseInt(rawPrinterId, 10),
     status: formData.get('status'),
     progress: formData.get('progress') ? Number(formData.get('progress')) : 0,
     material_amount: formData.get('material_amount') ? Number(formData.get('material_amount')) : null,
@@ -572,11 +581,7 @@ async function handleTaskSubmit(event) {
     payload.coil_id = parseInt(coilId, 10);
   }
 
-  if (!payload.project_id || Number.isNaN(payload.project_id)) {
-    showMessage('Выберите проект для задачи', true);
-    return;
-  }
-  if (!payload.printer_id || Number.isNaN(payload.printer_id)) {
+  if (!isAllPrinters && (!payload.printer_id || Number.isNaN(payload.printer_id))) {
     showMessage('Выберите принтер для задачи', true);
     return;
   }
@@ -591,6 +596,19 @@ async function handleTaskSubmit(event) {
         body: JSON.stringify(payload)
       });
       showMessage('Задача обновлена');
+    } else if (isAllPrinters) {
+      // Создаём задачу для каждого принтера
+      let created = 0;
+      for (const printer of printers) {
+        const taskPayload = { ...payload, printer_id: printer.id };
+        await fetchJson('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(taskPayload)
+        });
+        created++;
+      }
+      showMessage(`Создано ${created} задач для всех принтеров`);
     } else {
       // Создаём задачу и получаем её ID
       const response = await fetchJson('/api/tasks', {

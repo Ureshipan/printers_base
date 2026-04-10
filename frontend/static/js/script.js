@@ -198,6 +198,7 @@ function renderPrinters(printers) {
             <span class="printer-icon">🖨️</span>
             <span>${p.name}</span>
           </div>
+          ${p.serial_number ? `<div class="printer-prop" style="color:#8f94d1;font-size:0.85em">S/N: ${p.serial_number}</div>` : ''}
           <div class="printer-prop">Материал - ${p.material} | Сопло ${p.nozzle_diameter || 0.4} мм</div>
           <div class="printer-prop">Текущая модель - ${isOffline ? '—' : p.model}</div>
           <div class="printer-prop printer-status ${statusClass}">${statusText}</div>
@@ -213,13 +214,6 @@ function renderPrinters(printers) {
 }
 
 function updatePrinterStats(printers) {
-  const statTotal = document.getElementById('statTotal');
-  const statWork = document.getElementById('statWork');
-  const statIdle = document.getElementById('statIdle');
-  const statError = document.getElementById('statError');
-  const statService = document.getElementById('statService');
-  const statOffline = document.getElementById('statOffline');
-
   const stats = { work: 0, idle: 0, error: 0, service: 0, offline: 0 };
   printers.forEach(p => {
     if (p.status === 'work') stats.work += 1;
@@ -229,20 +223,25 @@ function updatePrinterStats(printers) {
     else stats.idle += 1;
   });
 
-  if (statTotal) statTotal.textContent = printers.length;
-  if (statWork) statWork.textContent = stats.work;
-  if (statIdle) statIdle.textContent = stats.idle;
-  if (statError) statError.textContent = stats.error;
-  if (statService) statService.textContent = stats.service;
-  if (statOffline) statOffline.textContent = stats.offline;
-
-  // Обновляем ширину полосок статус-бара
   const total = printers.length || 1;
-  document.querySelectorAll('.bar-work').forEach(el => el.style.flex = stats.work / total);
-  document.querySelectorAll('.bar-idle').forEach(el => el.style.flex = stats.idle / total);
-  document.querySelectorAll('.bar-error').forEach(el => el.style.flex = stats.error / total);
-  document.querySelectorAll('.bar-service').forEach(el => el.style.flex = stats.service / total);
-  document.querySelectorAll('.bar-offline').forEach(el => el.style.flex = stats.offline / total);
+
+  // Обновляем счётчики
+  const ids = { statTotal: total, statWork: stats.work, statIdle: stats.idle,
+                statError: stats.error, statService: stats.service, statOffline: stats.offline };
+  for (const [id, val] of Object.entries(ids)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  // Обновляем сегменты стекированной полосы
+  const segments = [
+    ['segWork', stats.work], ['segIdle', stats.idle], ['segError', stats.error],
+    ['segService', stats.service], ['segOffline', stats.offline]
+  ];
+  for (const [id, count] of segments) {
+    const el = document.getElementById(id);
+    if (el) el.style.width = count > 0 ? (count / total * 100) + '%' : '0';
+  }
 }
 
 function renderMaterials(coils) {

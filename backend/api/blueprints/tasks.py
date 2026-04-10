@@ -25,10 +25,8 @@ def api_tasks():
         return jsonify([serialize_task(task) for task in tasks])
 
     data = request.get_json(force=True, silent=True) or {}
-    required_fields = ['project_id', 'printer_id']
-    missing = [field for field in required_fields if data.get(field) is None]
-    if missing:
-        return jsonify({"success": False, "message": f"Отсутствуют поля: {', '.join(missing)}"}), 400
+    if data.get('printer_id') is None:
+        return jsonify({"success": False, "message": "Отсутствует поле: printer_id"}), 400
 
     task = db.add_task(
         name=data.get('name'),
@@ -36,7 +34,7 @@ def api_tasks():
         notes=data.get('notes'),
         progress=data.get('progress', 0),
         material_amount=data.get('material_amount'),
-        project_id=data['project_id'],
+        project_id=data.get('project_id'),
         printer_id=data['printer_id'],
         coil_id=data.get('coil_id'),
         time_start=data.get('time_start'),

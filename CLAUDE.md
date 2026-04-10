@@ -66,28 +66,6 @@ python backend/services/moonraker_tool.py --host <IP>
 
 ---
 
-## Sub-Agent Pipeline
-
-```
-implementation-coder (TDD: RED → GREEN → REFACTOR)
-    ↓
-moonraker-test-architect (реальные/mock запросы к Moonraker API)
-    ↓
-strict-qa-validator (SQLite, Flask, фоновые потоки, состояния принтеров)
-    ↓
-doc-architect (обновление документации)
-```
-
-### Orchestrator Rules (СТРОГО)
-
-1. **Оркестратор НЕ пишет код** — делегирует `implementation-coder`.
-2. **Промпт к кодеру ВСЕГДА начинается с `ultrathink`**.
-3. **Оркестратор НЕ читает файлы**, которые создал/изменил субагент (экономия контекста).
-4. **После кодера** — оркестратор запускает `pytest` (ТОЛЬКО конкретный тест-файл!).
-5. **Валидация** — запуск `strict-qa-validator` перед любым коммитом.
-
----
-
 ## Architecture
 
 ```
@@ -107,8 +85,8 @@ Flask (web_interface.py)
 | `backend/db/data_model.py` | SQLAlchemy ORM, DBModel (все CRUD операции) | ~1200 |
 | `backend/services/gcode_parser.py` | Парсер G-code (OrcaSlicer, Cura) | ~390 |
 | `backend/services/moonraker_tool.py` | CLI для интерактивного управления | ~480 |
-| `backend/services/health.py` | Circuit Breaker для принтеров (TODO) | — |
-| `backend/services/notifications.py` | Telegram/Email уведомления (TODO) | — |
+| `backend/services/health.py` | Circuit Breaker для принтеров (TODO) |
+| `backend/services/notifications.py` | Telegram/Email уведомления (TODO) |
 
 ### ORM Models (data_model.py)
 
@@ -197,12 +175,12 @@ TELEGRAM_CHAT_ID=                # Chat ID для уведомлений (TODO)
 
 ---
 
-## Testing Rules (СТРОГО)
+## Testing
 
-### Scope тестов (КРИТИЧЕСКИ ВАЖНО!)
+### Scope тестов
 
 ```bash
-# На шагах TDD (RED/GREEN/REFACTOR) — ТОЛЬКО свой тест-файл:
+# TDD-цикл (RED/GREEN/REFACTOR) — ТОЛЬКО свой тест-файл:
 pytest tests/unit/test_КОНКРЕТНЫЙ.py --tb=short -q
 
 # Промежуточная проверка (каждые 3-4 шага):
@@ -211,11 +189,6 @@ pytest tests/unit/ --tb=no -q 2>&1 | tail -10
 # Перед коммитом (ОДИН РАЗ):
 pytest --tb=short -q
 ```
-
-**ЗАПРЕЩЕНО:**
-- `pytest -v` после каждого шага
-- Запуск всех тестов внутри TDD-цикла
-- Фиктивные тесты (assert True)
 
 ### Test Patterns
 
@@ -237,7 +210,6 @@ def db(tmp_path):
 def client(db):
     """Flask test client с тестовой БД."""
     app.config['TESTING'] = True
-    # Подставляем тестовую БД
     with app.test_client() as client:
         yield client
 ```
@@ -274,7 +246,7 @@ Nginx (reverse proxy, static files)
 
 ---
 
-## Safety Rules (НЕ ОБСУЖДАЕТСЯ)
+## Project Rules
 
 ### ❌ NEVER:
 - Запускать Flask dev server в продакшене
@@ -287,7 +259,6 @@ Nginx (reverse proxy, static files)
 
 ### ✅ ALWAYS:
 - Читать существующий код перед модификацией
-- Следовать TDD: RED → GREEN → REFACTOR
 - Использовать type hints (PEP 8)
 - Писать комментарии на русском
 - Сверяться с `docs/` при работе с Moonraker

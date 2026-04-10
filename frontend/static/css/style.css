@@ -393,24 +393,70 @@ h2 { margin: 0 0 15px 0; font-size: 22px; font-weight: 700; }
   background: #66bb6a;
 }
 
+/* --- Панель статусов принтеров --- */
 .status-block { margin-bottom: 18px; }
-.status-bar {
-  display: flex; align-items: center;
-  margin-bottom: 7px;
+.status-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
 }
-.status-label { width: 110px; font-size: 15px; }
-.status-value { width: 28px; text-align: right; font-weight: 600; }
-.bar {
-  flex: 1;
-  height: 5px;
-  margin: 0 8px;
-  border-radius: 4px;
+.status-header h2 { margin: 0; }
+.status-total {
+  font-size: 28px;
+  font-weight: 700;
+  color: #c5c8ff;
 }
-.bar-work { background: #4547ff; }
-.bar-idle { background: #ffc400; }
-.bar-error { background: #fa3280; }
-.bar-service { background: #e162e7; }
-.bar-offline { background: #555566; }
+
+/* Стекированная полоса */
+.status-stacked-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #2a2a3d;
+  margin-bottom: 14px;
+}
+.stacked-segment {
+  height: 100%;
+  transition: width 0.4s ease;
+  min-width: 0;
+}
+.seg-work    { background: #4f6ef7; }
+.seg-idle    { background: #f5c542; }
+.seg-error   { background: #f0406a; }
+.seg-service { background: #c562e7; }
+.seg-offline { background: #555566; }
+
+/* Легенда */
+.status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #a0a3c4;
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-work    { background: #4f6ef7; }
+.dot-idle    { background: #f5c542; }
+.dot-error   { background: #f0406a; }
+.dot-service { background: #c562e7; }
+.dot-offline { background: #555566; }
+.legend-count {
+  font-weight: 700;
+  color: #e0e0f0;
+  margin-left: 2px;
+}
 
 .materials-block table, .queue-block table {
   width: 100%;

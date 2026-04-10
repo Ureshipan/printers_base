@@ -25,21 +25,23 @@
     </section>
     <section class="stats-section">
       <div class="status-block">
-        <h2>Все (<span id="statTotal">0</span>)</h2>
-        <div class="status-bar">
-          <div class="status-label">В работе</div><div class="bar bar-work"></div><div class="status-value" id="statWork">0</div>
+        <div class="status-header">
+          <h2>Принтеры</h2>
+          <span class="status-total" id="statTotal">0</span>
         </div>
-        <div class="status-bar">
-          <div class="status-label">Простаивает</div><div class="bar bar-idle"></div><div class="status-value" id="statIdle">0</div>
+        <div class="status-stacked-bar" id="stackedBar">
+          <div class="stacked-segment seg-work" id="segWork"></div>
+          <div class="stacked-segment seg-idle" id="segIdle"></div>
+          <div class="stacked-segment seg-error" id="segError"></div>
+          <div class="stacked-segment seg-service" id="segService"></div>
+          <div class="stacked-segment seg-offline" id="segOffline"></div>
         </div>
-        <div class="status-bar">
-          <div class="status-label">Ошибка</div><div class="bar bar-error"></div><div class="status-value" id="statError">0</div>
-        </div>
-        <div class="status-bar">
-          <div class="status-label">Тех. осмотр</div><div class="bar bar-service"></div><div class="status-value" id="statService">0</div>
-        </div>
-        <div class="status-bar">
-          <div class="status-label">Офлайн</div><div class="bar bar-offline"></div><div class="status-value" id="statOffline">0</div>
+        <div class="status-legend">
+          <div class="legend-item"><span class="legend-dot dot-work"></span>В работе<span class="legend-count" id="statWork">0</span></div>
+          <div class="legend-item"><span class="legend-dot dot-idle"></span>Простой<span class="legend-count" id="statIdle">0</span></div>
+          <div class="legend-item"><span class="legend-dot dot-error"></span>Ошибка<span class="legend-count" id="statError">0</span></div>
+          <div class="legend-item"><span class="legend-dot dot-service"></span>ТО<span class="legend-count" id="statService">0</span></div>
+          <div class="legend-item"><span class="legend-dot dot-offline"></span>Офлайн<span class="legend-count" id="statOffline">0</span></div>
         </div>
       </div>
       <div class="materials-block">

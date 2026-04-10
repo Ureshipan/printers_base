@@ -59,6 +59,7 @@ def api_printers():
                     "needs_maintenance": needs_maintenance,
                     "print_hours": getattr(printer, "print_hours", 0.0) or 0.0,
                     "nozzle_diameter": getattr(printer, "nozzle_diameter", 0.4) or 0.4,
+                    "serial_number": getattr(printer, "serial_number", None),
                 })
         return jsonify(result)
 
@@ -158,6 +159,7 @@ def api_printer_detail(printer_id: int):
                 "is_virtual": getattr(printer, "is_virtual", False),
                 "status": getattr(printer, "virtual_status", None),
                 "nozzle_diameter": getattr(printer, "nozzle_diameter", 0.4) or 0.4,
+                "serial_number": getattr(printer, "serial_number", None),
             }
         })
 
@@ -220,6 +222,10 @@ def api_printer_detail(printer_id: int):
                     updates['moonraker_port'] = int(data.get('port'))
                 except (TypeError, ValueError):
                     pass
+
+        # Серийный номер можно менять для любого принтера
+        if 'serial_number' in data:
+            updates['serial_number'] = (data.get('serial_number') or '').strip() or None
 
         # Диаметр сопла можно менять для любого принтера
         if 'nozzle_diameter' in data:

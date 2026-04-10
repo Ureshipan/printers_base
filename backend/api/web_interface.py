@@ -74,10 +74,13 @@ from backend.api.helpers import (  # noqa: F401,E402
 )
 
 # ---------------------------------------------------------------------------
-# Запуск фоновых потоков при первом импорте модуля
+# Запуск фоновых потоков
 # ---------------------------------------------------------------------------
-if not app.config.get("BACKGROUND_THREADS_STARTED"):
-    start_background_threads(app)
+# НЕ запускаем при импорте модуля — с preload_app=True потоки стартуют
+# в мастер-процессе gunicorn и погибают при fork().
+# Gunicorn: потоки стартуют через post_worker_init в gunicorn_config.py
+# Dev-режим: потоки стартуют в __main__ ниже
 
 if __name__ == '__main__':
+    start_background_threads(app)
     app.run(host='0.0.0.0', port=5000, debug=True)

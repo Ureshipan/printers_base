@@ -37,6 +37,7 @@ class Printer(Base):
     is_virtual = Column(Boolean, default=False)
     virtual_status = Column(String, default="idle")
     print_hours = Column(Float, default=0.0)  # Общее время печати в часах
+    serial_number = Column(String)  # Серийный номер принтера
     nozzle_diameter = Column(Float, default=0.4)  # Диаметр сопла в мм
     active_coil_id = Column(Integer, ForeignKey('coils.id'))  # Активная катушка принтера
     removal_confirmed = Column(Boolean, default=False)  # Подтверждение уборки детали после печати
@@ -298,6 +299,7 @@ class DBModel:
             self._add_column_if_missing(conn, 'printers', 'is_virtual', "BOOLEAN DEFAULT 0")
             self._add_column_if_missing(conn, 'printers', 'virtual_status', "TEXT DEFAULT 'idle'")
             self._add_column_if_missing(conn, 'printers', 'print_hours', "FLOAT DEFAULT 0.0")
+            self._add_column_if_missing(conn, 'printers', 'serial_number', "TEXT")
             self._add_column_if_missing(conn, 'printers', 'nozzle_diameter', "FLOAT DEFAULT 0.4")
             self._add_column_if_missing(conn, 'printers', 'removal_confirmed', "BOOLEAN DEFAULT 0")
             # Поля для оффлайн-принтеров

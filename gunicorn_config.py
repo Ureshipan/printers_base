@@ -27,3 +27,15 @@ preload_app = True             # Экономия RAM через copy-on-write
 accesslog = "-"
 errorlog = "-"
 loglevel = "warning"
+
+
+def post_worker_init(worker):
+    """Запуск фоновых потоков в каждом воркере Gunicorn после fork().
+
+    preload_app=True загружает приложение в мастер-процессе,
+    но потоки не наследуются при fork(). Поэтому запускаем
+    фоновые потоки в каждом воркере отдельно.
+    """
+    from backend.api.web_interface import app
+    from backend.services.background import start_background_threads
+    start_background_threads(app)
